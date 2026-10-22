@@ -1180,6 +1180,11 @@ svg {
 .prose p {
   margin: 0 0 1.3em;
 }
+.prose img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
 .prose h2 {
   font-size: 1.16em;
   font-weight: 620;
@@ -1234,6 +1239,26 @@ svg {
 .prose ol {
   padding-left: 24px;
   margin: 1em 0;
+}
+.prose table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1.5em 0;
+  font-size: 0.9em;
+}
+.prose th,
+.prose td {
+  min-width: 8rem;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.prose th {
+  background: var(--soft);
 }
 .prose blockquote {
   border-left: 3px solid var(--purple);
@@ -2970,5 +2995,119 @@ svg {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Note library, explicit review, and scoped search. */
+.library-heading .secondary-button {
+  margin-top: 20px;
+}
+.note-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 18px 0;
+}
+.note-filters label {
+  display: flex;
+  flex: 1 1 130px;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.note-filters select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 30px 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+select:focus-visible {
+  outline: 3px solid var(--purple);
+  outline-offset: 3px;
+}
+.note-filters .subtle-link {
+  min-height: 44px;
+}
+.result-summary {
+  margin: 0 0 16px;
+}
+.note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+.note-tags span {
+  font-size: 12px;
+  color: var(--purple);
+  background: var(--tint);
+  padding: 3px 7px;
+  border-radius: 5px;
+}
+.review-item {
+  padding: 22px;
+  border-bottom: 1px solid var(--border);
+}
+.review-item:last-child {
+  border-bottom: 0;
+}
+.review-item h2 {
+  font-size: 17px;
+  margin-bottom: 7px;
+}
+.review-actions {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 16px;
+}
+.review-actions button {
+  min-height: 44px;
+}
+.review-item .question-row {
+  padding: 0;
+}
+.preferences-panel {
+  padding: 24px;
+}
+.preferences-panel h2 {
+  font-size: 18px;
+}
+.source-personal {
+  display: block;
+  font-size: 13px;
+  margin: 8px 0;
+}
+.reading-toolbar {
+  flex-wrap: wrap;
+  gap: 14px;
+}
+@media (max-width: 760px) {
+  .topbar-actions {
+    gap: 8px;
+  }
+  .note-filters label {
+    flex-basis: calc(50% - 12px);
+  }
+  .review-item {
+    padding: 18px;
+  }
+  .bottom-nav > a {
+    font-size: 11px;
+  }
+  .article-detail .reading-toolbar {
+    justify-content: flex-start;
+  }
+  .main-content {
+    padding-bottom: calc(90px + env(safe-area-inset-bottom));
   }
 }

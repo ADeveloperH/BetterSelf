@@ -1,0 +1,57 @@
+- id: unity
+  title: Unity
+  categories:
+    - { id: runtime, title: 基础与运行时 }
+    - { id: assets, title: 资源管理 }
+    - { id: development, title: 功能开发 }
+    - { id: performance, title: 调试与性能 }
+    - { id: build, title: 构建与发布 }
+    - { id: native, title: 原生交互 }
+- id: android
+  title: Android
+  categories:
+    - { id: framework, title: Framework 与组件 }
+    - { id: jetpack, title: Jetpack }
+    - { id: storage-network, title: 存储与网络 }
+    - { id: performance, title: 调试与性能 }
+    - { id: build, title: 构建与发布 }
+    - { id: security, title: 安全 }
+- id: programming
+  title: 编程语言与基础
+  categories:
+    - { id: csharp, title: C# }
+    - { id: java, title: Java 与 JVM }
+    - { id: kotlin, title: Kotlin }
+    - { id: algorithms, title: 数据结构与算法 }
+    - { id: architecture, title: 设计与架构 }
+- id: cross-platform
+  title: 跨平台与 Web
+  categories:
+    - { id: flutter, title: Flutter / Dart }
+    - { id: web, title: Web }
+    - { id: other, title: 其他跨平台方案 }
+- id: engineering
+  title: 工程工具
+  categories:
+    - { id: editors, title: 编辑器 }
+    - { id: git, title: 版本管理 }
+    - { id: automation, title: 构建自动化 }
+    - { id: scripts, title: 脚本与数据处理 }
+- id: graphics-media
+  title: 图形与音视频
+  categories:
+    - { id: rendering, title: 图形与渲染 }
+    - { id: images, title: 图像处理 }
+    - { id: media, title: 音视频 }
+- id: networks-systems
+  title: 网络与系统
+  categories:
+    - { id: protocols, title: 网络协议 }
+    - { id: debugging, title: 网络调试 }
+    - { id: environment, title: 系统与环境 }
+- id: ai
+  title: AI 与开发辅助
+  categories:
+    - { id: concepts, title: 基础概念 }
+    - { id: tools, title: 辅助开发工具 }
+    - { id: practice, title: 实践记录 }

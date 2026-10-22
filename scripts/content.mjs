@@ -40,7 +40,7 @@ function string(value) {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-export function validateContent(articles, questions) {
+export function validateContent(articles, questions, domains = []) {
   assert(Array.isArray(articles) && Array.isArray(questions), '内容必须为数组')
   const ids = new Set()
   for (const [kind, items] of [
@@ -62,6 +62,7 @@ export function validateContent(articles, questions) {
       )
       for (const field of ['updatedAt', 'verifiedAt']) {
         const date = item[field]
+        if (field === 'verifiedAt' && (date === null || date === undefined)) continue
         assert(
           typeof date === 'string' &&
             /^\d{4}-\d{2}-\d{2}$/.test(date) &&
@@ -72,7 +73,13 @@ export function validateContent(articles, questions) {
       }
       assert(Array.isArray(item.sources) && item.sources.length > 0, `${label} 缺少来源`)
       for (const source of item.sources) {
-        assert(string(source.title) && string(source.url), `${label} 来源字段缺失`)
+        assert(string(source.title), `${label} 来源字段缺失`)
+        assert([undefined, 'external', 'personal'].includes(source.kind), `${label} 来源类型无效`)
+        if (source.kind === 'personal') {
+          assert(source.url === undefined, `${label} 个人记录不应包含外部链接`)
+          continue
+        }
+        assert(string(source.url), `${label} 来源字段缺失`)
         let url
         try {
           url = new URL(source.url)
@@ -81,9 +88,27 @@ export function validateContent(articles, questions) {
         }
         assert(url.protocol === 'https:', `${label} 来源必须使用 HTTPS`)
       }
-      if (kind === '文章')
+      if (kind === '文章') {
         assert(string(item.summary) && string(item.body), `${label} 缺少摘要或正文`)
-      else {
+        for (const field of ['domainId', 'categoryId'])
+          assert(
+            string(item[field]) && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item[field]),
+            `${label} ${field} 无效`,
+          )
+        assert(
+          ['concept', 'guide', 'troubleshooting', 'retrospective', 'resources'].includes(
+            item.noteType,
+          ),
+          `${label} 笔记类型无效`,
+        )
+        if (domains.length) {
+          const domain = domains.find((domain) => domain.id === item.domainId)
+          assert(
+            domain?.categories.some((category) => category.id === item.categoryId),
+            `${label} 分类不存在`,
+          )
+        }
+      } else {
         for (const field of ['shortAnswer', 'explanation'])
           assert(string(item[field]), `${label} 缺少 ${field}`)
         assert(['基础', '原理', '场景'].includes(item.level), `${label} 难度无效`)
@@ -109,6 +134,25 @@ export function renderMarkdown(text) {
 }
 
 export async function compileContent(root) {
+  const domains = parse(await readFile(path.join(root, 'taxonomy.yaml'), 'utf8'))
+  assert(Array.isArray(domains) && domains.length > 0, '缺少主题分类')
+  const domainIds = new Set()
+  for (const domain of domains) {
+    assert(
+      string(domain.id) && string(domain.title) && !domainIds.has(domain.id),
+      '主题分类无效或重复',
+    )
+    domainIds.add(domain.id)
+    assert(Array.isArray(domain.categories) && domain.categories.length > 0, '缺少子分类')
+    const categoryIds = new Set()
+    for (const category of domain.categories) {
+      assert(
+        string(category.id) && string(category.title) && !categoryIds.has(category.id),
+        '子分类无效或重复',
+      )
+      categoryIds.add(category.id)
+    }
+  }
   const articleDirectory = path.join(root, 'articles')
   const questionDirectory = path.join(root, 'questions')
   const articles = []
@@ -128,17 +172,30 @@ export async function compileContent(root) {
     assert(Array.isArray(parsed), `${file} 必须包含题目数组`)
     questions.push(...parsed)
   }
-  validateContent(articles, questions)
+  validateContent(articles, questions, domains)
   const searchable = (...values) => values.flat(Infinity).join(' ').normalize('NFKC').toLowerCase()
   const result = {
+    domains,
     articles: articles.map(({ body, ...article }) => ({
       ...article,
+      verifiedAt: article.verifiedAt ?? null,
       ...renderMarkdown(body),
       minutes: Math.max(1, Math.ceil(body.length / 380)),
-      searchText: searchable(article.title, article.summary, article.tags, body),
+      searchText: searchable(
+        article.title,
+        article.summary,
+        article.tags,
+        article.topic,
+        domains.find((domain) => domain.id === article.domainId)?.title,
+        domains
+          .find((domain) => domain.id === article.domainId)
+          ?.categories.find((category) => category.id === article.categoryId)?.title,
+        body,
+      ),
     })),
     questions: questions.map((question) => ({
       ...question,
+      verifiedAt: question.verifiedAt ?? null,
       shortAnswerHtml: renderMarkdown(question.shortAnswer).html,
       explanationHtml: renderMarkdown(question.explanation).html,
       searchText: searchable(

@@ -2,6 +2,9 @@
 id: csharp-memory-basics
 title: C# 值类型、引用类型与 Unity 中的分配问题
 topic: C# 与 Unity 面试基础
+domainId: programming
+categoryId: csharp
+noteType: concept
 tags: [C#, Unity, 内存管理]
 summary: 从赋值语义出发，理解值类型、引用类型和装箱，再把知识连接到 Unity 的性能排查。
 updatedAt: '2026-10-22'

@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto'
 import { afterEach, describe, expect, it } from 'vitest'
+import { openDB } from 'idb'
 import { createLearningStore, parseBackup } from '../src/lib/storage'
 import type { Backup, LearningRecord } from '../src/types'
 
@@ -16,11 +17,12 @@ const record = (id: string, timestamp: string): LearningRecord => ({
   favorite: true,
   progress: 0,
   lastViewedAt: null,
+  reviewState: 'active',
   updatedAt: timestamp,
 })
 const backup = (records: LearningRecord[]): Backup => ({
   app: 'BetterSelf',
-  schemaVersion: 1,
+  schemaVersion: 2,
   exportedAt: '2026-10-22T00:00:00.000Z',
   records,
 })
@@ -88,9 +90,73 @@ describe('学习记录持久化和备份', () => {
   it('拒绝重复 ID、未来格式版本和破损 JSON', () => {
     const item = record('q-first', '2026-10-22T01:00:00.000Z')
     expect(() => parseBackup(JSON.stringify(backup([item, item])))).toThrow('重复')
-    expect(() => parseBackup(JSON.stringify({ ...backup([]), schemaVersion: 2 }))).toThrow(
+    expect(() => parseBackup(JSON.stringify({ ...backup([]), schemaVersion: 3 }))).toThrow(
       '不受支持',
     )
     expect(() => parseBackup('{broken')).toThrow('JSON')
+  })
+  it('旧备份保留自评与收藏，普通笔记不会因阅读收藏进入复习', () => {
+    const legacyQuestion = record('q-legacy', '2026-10-22T00:00:00.000Z')
+    const { reviewState: _, ...legacy } = legacyQuestion
+    const result = parseBackup(
+      JSON.stringify({
+        ...backup([]),
+        schemaVersion: 1,
+        records: [
+          legacy,
+          { ...legacy, id: 'note-legacy', kind: 'article', mastery: null, progress: 0.7 },
+        ],
+      }),
+    )
+    expect(result.schemaVersion).toBe(2)
+    expect(result.records[0].reviewState).toBe('active')
+    expect(result.records[1]).toMatchObject({ favorite: true, progress: 0.7, reviewState: 'none' })
+  })
+  it('升级读取现有数据库，保存复习状态后不会再次按旧自评加入', async () => {
+    const name = crypto.randomUUID()
+    const store = newStore(name)
+    await store.all()
+    const db = await openDB(name)
+    const { reviewState: _, ...legacy } = record('q-legacy', '2026-10-22T00:00:00.000Z')
+    await db.put('records', legacy)
+    db.close()
+    expect((await store.all())[0].reviewState).toBe('active')
+    await store.update('q-legacy', 'question', { reviewState: 'none' })
+    await store.update('q-legacy', 'question', { favorite: false })
+    expect((await store.all())[0]).toMatchObject({ mastery: 'uncertain', reviewState: 'none' })
+  })
+  it('笔记的收藏、阅读与复习独立，完成状态可经备份恢复', async () => {
+    const store = newStore()
+    await store.update('note-first', 'article', { favorite: true, progress: 0.4 })
+    expect((await store.all())[0].reviewState).toBe('none')
+    await store.update('note-first', 'article', { reviewState: 'active' })
+    await store.update('note-first', 'article', { reviewState: 'completed' })
+    const restored = newStore()
+    await restored.import(await store.export())
+    expect((await restored.all())[0]).toMatchObject({
+      favorite: true,
+      progress: 0.4,
+      reviewState: 'completed',
+    })
+  })
+  it('题目薄弱自评加入复习，查看答案不改变复习，掌握后完成', async () => {
+    const store = newStore()
+    await store.update('q-first', 'question', { mastery: 'unknown' })
+    await store.update('q-first', 'question', { lastViewedAt: new Date().toISOString() })
+    expect((await store.all())[0].reviewState).toBe('active')
+    await store.update('q-first', 'question', { mastery: 'mastered' })
+    expect((await store.all())[0].reviewState).toBe('completed')
+  })
+  it('新格式缺少或伪造复习状态时拒绝整份导入', () => {
+    const item = record('q-first', '2026-10-22T00:00:00.000Z')
+    expect(() =>
+      parseBackup(
+        JSON.stringify(
+          backup([{ ...item, reviewState: 'unexpected' } as unknown as LearningRecord]),
+        ),
+      ),
+    ).toThrow('无效')
+    const { reviewState: _, ...missing } = item
+    expect(() => parseBackup(JSON.stringify({ ...backup([]), records: [missing] }))).toThrow('无效')
   })
 })

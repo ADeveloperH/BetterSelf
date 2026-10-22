@@ -1,5 +1,5 @@
 import { openDB, type DBSchema } from 'idb'
-import type { Backup, ContentKind, LearningRecord } from '../types'
+import type { Backup, ContentKind, LearningRecord, ReviewState } from '../types'
 
 interface LearningDatabase extends DBSchema {
   records: { key: string; value: LearningRecord }
@@ -10,6 +10,20 @@ const isoDate = (value: unknown): value is string =>
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) &&
   Number.isFinite(Date.parse(value)) &&
   new Date(value).toISOString() === value
+
+// Old question self-ratings remain deliberate review choices; reading and bookmarks do not.
+function withReviewState(
+  record: Omit<LearningRecord, 'reviewState'> & { reviewState?: ReviewState },
+): LearningRecord {
+  return {
+    ...record,
+    reviewState:
+      record.reviewState ??
+      (record.kind === 'question' && ['unknown', 'uncertain'].includes(record.mastery || '')
+        ? 'active'
+        : 'none'),
+  }
+}
 
 export function parseBackup(text: string): Backup {
   if (text.length > 5_000_000) throw new Error('备份文件过大，请选择 5 MB 以内的文件。')
@@ -23,7 +37,7 @@ export function parseBackup(text: string): Backup {
   const data = input as Partial<Backup>
   if (
     data.app !== 'BetterSelf' ||
-    data.schemaVersion !== 1 ||
+    ![1, 2].includes(data.schemaVersion as number) ||
     !isoDate(data.exportedAt) ||
     !Array.isArray(data.records)
   ) {
@@ -47,22 +61,26 @@ export function parseBackup(text: string): Backup {
       record.progress < 0 ||
       record.progress > 1 ||
       !isoDate(record.updatedAt) ||
-      (record.lastViewedAt !== null && !isoDate(record.lastViewedAt))
+      (record.lastViewedAt !== null && !isoDate(record.lastViewedAt)) ||
+      (data.schemaVersion === 2 && !['none', 'active', 'completed'].includes(record.reviewState))
     ) {
       throw new Error('备份中有无效或重复的学习记录，原有数据保持不变。')
     }
     seen.add(record.id)
-    records.push({
-      id: record.id,
-      kind: record.kind,
-      mastery: record.mastery,
-      favorite: record.favorite,
-      progress: record.progress,
-      lastViewedAt: record.lastViewedAt,
-      updatedAt: record.updatedAt,
-    })
+    records.push(
+      withReviewState({
+        id: record.id,
+        kind: record.kind,
+        mastery: record.mastery,
+        favorite: record.favorite,
+        progress: record.progress,
+        lastViewedAt: record.lastViewedAt,
+        updatedAt: record.updatedAt,
+        reviewState: data.schemaVersion === 2 ? record.reviewState : undefined,
+      }),
+    )
   }
-  return { app: 'BetterSelf', schemaVersion: 1, exportedAt: data.exportedAt, records }
+  return { app: 'BetterSelf', schemaVersion: 2, exportedAt: data.exportedAt, records }
 }
 
 export function createLearningStore(name = 'betterself-learning') {
@@ -73,16 +91,19 @@ export function createLearningStore(name = 'betterself-learning') {
   })
   return {
     async all() {
-      return (await database).getAll('records')
+      return (await (await database).getAll('records')).map(withReviewState)
     },
     async update(
       id: string,
       kind: ContentKind,
-      patch: Partial<Pick<LearningRecord, 'mastery' | 'favorite' | 'progress' | 'lastViewedAt'>>,
+      patch: Partial<
+        Pick<LearningRecord, 'mastery' | 'favorite' | 'progress' | 'lastViewedAt' | 'reviewState'>
+      >,
     ) {
       const db = await database
       const tx = db.transaction('records', 'readwrite')
-      const current = await tx.store.get(id)
+      const stored = await tx.store.get(id)
+      const current = stored ? withReviewState(stored) : undefined
       const next: LearningRecord = {
         id,
         kind,
@@ -90,9 +111,18 @@ export function createLearningStore(name = 'betterself-learning') {
         favorite: false,
         progress: 0,
         lastViewedAt: null,
+        reviewState: 'none',
         ...current,
         ...patch,
         updatedAt: new Date().toISOString(),
+      }
+      if (kind === 'question' && patch.mastery && patch.reviewState === undefined) {
+        next.reviewState =
+          patch.mastery === 'mastered'
+            ? current?.reviewState === 'active'
+              ? 'completed'
+              : current?.reviewState || 'none'
+            : 'active'
       }
       await tx.store.put(next)
       await tx.done
@@ -101,7 +131,7 @@ export function createLearningStore(name = 'betterself-learning') {
     async export(): Promise<Backup> {
       return {
         app: 'BetterSelf',
-        schemaVersion: 1,
+        schemaVersion: 2,
         exportedAt: new Date().toISOString(),
         records: await this.all(),
       }

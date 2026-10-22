@@ -27,14 +27,17 @@ import {
   List,
   HardDrive,
   ExternalLink,
+  Settings,
 } from '@lucide/vue'
 import ArticleCard from './components/ArticleCard.vue'
+import NoteFilters from './components/NoteFilters.vue'
 import QuestionRow from './components/QuestionRow.vue'
 import Sources from './components/Sources.vue'
-import { articles, questions, matchesSearch } from './lib/content'
+import { articles, questions, domains, matchesSearch } from './lib/content'
+import { emptyNoteFilters, matchesNoteFilters, noteLocation, noteTypeLabels } from './lib/notes'
 import { createLearningStore, parseBackup } from './lib/storage'
 import { usePwa } from './lib/pwa'
-import type { Backup, ContentKind, LearningRecord, Mastery } from './types'
+import type { Backup, ContentKind, LearningRecord, Mastery, ReviewState } from './types'
 
 const document = window.document
 const location = window.location
@@ -53,9 +56,13 @@ const storageError = ref('')
 const toast = ref('')
 let toastTimer: ReturnType<typeof setTimeout>
 const query = ref('')
-const selectedTag = ref('全部')
+const noteFilters = ref(emptyNoteFilters())
+const searchFilters = ref(emptyNoteFilters())
+const noteView = ref('all')
+const searchScope = ref<'article' | 'question'>('article')
 const practiceFilter = ref('all')
-const reviewFilter = ref('weak')
+const reviewKind = ref<'article' | 'question'>('article')
+const reviewFilter = ref<ReviewState>('active')
 const revealed = ref(false)
 const readProgress = ref(0)
 const restoring = ref(false)
@@ -82,7 +89,7 @@ const {
 } = usePwa()
 
 const nav = [
-  { path: '/', title: '知识库', icon: BookOpen },
+  { path: '/', title: '笔记库', icon: BookOpen },
   { path: '/practice', title: '面试练习', icon: Layers },
   { path: '/review', title: '我的复习', icon: BrainCircuit },
   { path: '/search', title: '搜索', icon: Search },
@@ -90,6 +97,11 @@ const nav = [
 const currentArticle = computed(() =>
   route.value.startsWith('/article/')
     ? articles.find((item) => item.id === route.value.slice(9))
+    : undefined,
+)
+const relatedQuestion = computed(() =>
+  currentArticle.value
+    ? questions.find((question) => question.articleIds.includes(currentArticle.value!.id))
     : undefined,
 )
 const currentQuestion = computed(() =>
@@ -104,17 +116,16 @@ const activePath = computed(() =>
       ? '/practice'
       : route.value,
 )
-const pageTitle = computed(
-  () => nav.find((item) => item.path === activePath.value)?.title || '页面未找到',
+const pageTitle = computed(() =>
+  route.value === '/settings'
+    ? '设置与备份'
+    : nav.find((item) => item.path === activePath.value)?.title || '页面未找到',
 )
 const masteryLabels: Record<Mastery, string> = {
   unknown: '不会',
   uncertain: '模糊',
   mastered: '掌握',
 }
-const masteredCount = computed(
-  () => questions.filter((item) => records.value[item.id]?.mastery === 'mastered').length,
-)
 const ratedCount = computed(
   () => questions.filter((item) => records.value[item.id]?.mastery).length,
 )
@@ -123,32 +134,51 @@ const weakQuestions = computed(() =>
     ['unknown', 'uncertain'].includes(records.value[item.id]?.mastery || ''),
   ),
 )
-const favoriteCount = computed(
-  () => [...articles, ...questions].filter((item) => records.value[item.id]?.favorite).length,
+const populatedDomains = computed(() =>
+  domains.filter((domain) => articles.some((article) => article.domainId === domain.id)),
 )
-const tags = computed(() => ['全部', ...new Set(articles.flatMap((article) => article.tags))])
+function selectNoteDomain(domain = '') {
+  noteFilters.value = { ...emptyNoteFilters(), domain }
+  noteView.value = 'all'
+}
+function clearSearch() {
+  query.value = ''
+  searchFilters.value = emptyNoteFilters()
+}
 const visibleArticles = computed(() =>
-  articles.filter((item) => selectedTag.value === '全部' || item.tags.includes(selectedTag.value)),
+  articles.filter(
+    (item) =>
+      matchesNoteFilters(item, noteFilters.value) &&
+      (noteView.value !== 'favorites' || records.value[item.id]?.favorite),
+  ),
 )
 const visibleQuestions = computed(() =>
   questions.filter(
     (item) =>
       practiceFilter.value === 'all' ||
+      (practiceFilter.value === 'favorites' && records.value[item.id]?.favorite) ||
       (practiceFilter.value === 'unrated'
         ? !records.value[item.id]?.mastery
         : records.value[item.id]?.mastery === practiceFilter.value),
   ),
 )
 const reviewQuestions = computed(() =>
-  reviewFilter.value === 'weak'
-    ? weakQuestions.value
-    : reviewFilter.value === 'favorites'
-      ? questions.filter((item) => records.value[item.id]?.favorite)
-      : questions,
+  questions.filter((item) => records.value[item.id]?.reviewState === reviewFilter.value),
+)
+const reviewArticles = computed(() =>
+  articles.filter((item) => records.value[item.id]?.reviewState === reviewFilter.value),
+)
+const activeReviewCount = computed(
+  () =>
+    [...articles, ...questions].filter((item) => records.value[item.id]?.reviewState === 'active')
+      .length,
 )
 const favoriteArticles = computed(() => articles.filter((item) => records.value[item.id]?.favorite))
 const foundArticles = computed(() =>
-  articles.filter((item) => matchesSearch(item.searchText, query.value)),
+  articles.filter(
+    (item) =>
+      matchesSearch(item.searchText, query.value) && matchesNoteFilters(item, searchFilters.value),
+  ),
 )
 const foundQuestions = computed(() =>
   questions.filter((item) => matchesSearch(item.searchText, query.value)),
@@ -182,7 +212,7 @@ const cacheLabel = computed(() =>
 )
 const validPage = computed(
   () =>
-    ['/', '/practice', '/review', '/search'].includes(route.value) ||
+    ['/', '/practice', '/review', '/search', '/settings'].includes(route.value) ||
     !!currentArticle.value ||
     !!currentQuestion.value,
 )
@@ -198,7 +228,9 @@ function notify(message: string) {
 async function save(
   id: string,
   kind: ContentKind,
-  patch: Partial<Pick<LearningRecord, 'mastery' | 'favorite' | 'progress' | 'lastViewedAt'>>,
+  patch: Partial<
+    Pick<LearningRecord, 'mastery' | 'favorite' | 'progress' | 'lastViewedAt' | 'reviewState'>
+  >,
 ) {
   if (!ready.value) {
     notify('学习记录暂不可用，请检查页面上方提示。')
@@ -221,6 +253,22 @@ async function save(
 async function favorite(id: string, kind: ContentKind) {
   const value = !records.value[id]?.favorite
   if (await save(id, kind, { favorite: value })) notify(value ? '已加入收藏' : '已取消收藏')
+}
+async function setReview(id: string, kind: ContentKind, reviewState: ReviewState) {
+  if (await save(id, kind, { reviewState }))
+    notify(
+      reviewState === 'active'
+        ? '已加入复习'
+        : reviewState === 'completed'
+          ? '已完成本次复习'
+          : '已移出复习',
+    )
+}
+function openSearch() {
+  if (route.value !== '/search')
+    searchScope.value = activePath.value === '/practice' ? 'question' : 'article'
+  location.hash = '/search'
+  void nextTick(() => document.querySelector<HTMLInputElement>('#site-search')?.focus())
 }
 
 let scrollTimer: ReturnType<typeof setTimeout> | undefined
@@ -266,6 +314,14 @@ async function activateRoute() {
 }
 function onHashChange() {
   void saveReading()
+  if (readRoute() === '/review' && route.value !== '/review') {
+    reviewFilter.value = 'active'
+    if (activePath.value === '/practice') reviewKind.value = 'question'
+    else if (activePath.value === '/') reviewKind.value = 'article'
+  }
+  if (readRoute() === '/search' && route.value !== '/search') {
+    searchScope.value = activePath.value === '/practice' ? 'question' : 'article'
+  }
   route.value = readRoute()
 }
 function onVisibilityChange() {
@@ -405,8 +461,7 @@ function keyboardShortcut(event: KeyboardEvent) {
     (event.key === '/' && !['INPUT', 'TEXTAREA'].includes(tag))
   ) {
     event.preventDefault()
-    location.hash = '/search'
-    document.querySelector<HTMLInputElement>('#site-search')?.focus()
+    openSearch()
   }
 }
 onMounted(async () => {
@@ -466,25 +521,33 @@ onUnmounted(() => {
           :class="{ active: activePath === item.path }"
           :aria-current="activePath === item.path ? 'page' : undefined"
           ><component :is="item.icon" :size="19" /><span>{{ item.title }}</span
-          ><span v-if="item.path === '/review' && weakQuestions.length" class="nav-count">{{
-            weakQuestions.length
+          ><span v-if="item.path === '/review' && activeReviewCount" class="nav-count">{{
+            activeReviewCount
           }}</span></a
         >
       </nav>
       <div class="sidebar-separator"></div>
-      <div class="sidebar-label">正在积累</div>
-      <a href="#/practice" class="sidebar-topic"
-        ><span class="topic-dot"></span><span>C# 与 Unity 基础</span
-        ><span class="sidebar-topic-count">{{ questions.length }}</span></a
+      <div class="sidebar-label">笔记主题</div>
+      <a
+        v-for="domain in populatedDomains"
+        :key="domain.id"
+        href="#/"
+        class="sidebar-topic"
+        @click="selectNoteDomain(domain.id)"
       >
+        <span class="topic-dot"></span><span>{{ domain.title }}</span
+        ><span class="sidebar-topic-count">{{
+          articles.filter((article) => article.domainId === domain.id).length
+        }}</span>
+      </a>
       <div class="sidebar-bottom">
         <div class="sidebar-note">
           <div class="note-icon"><Sparkles :size="18" /></div>
           <h3>每一小步，都算数。</h3>
           <p>留下经验，常常回顾。<br />把学过的，变成自己的。</p>
         </div>
-        <a href="#/review" class="local-data-link"
-          ><HardDrive :size="14" /> 学习记录与备份 <ChevronRight :size="13" /></a
+        <a href="#/settings" class="local-data-link"
+          ><HardDrive :size="14" /> 设置与备份 <ChevronRight :size="13" /></a
         ><span class="sidebar-version">BETTERSELF / {{ version }}</span>
       </div>
     </aside>
@@ -500,11 +563,13 @@ onUnmounted(() => {
           ></a
         >
         <div class="topbar-actions">
-          <button class="header-search" @click="location.hash = '/search'">
-            <Search :size="16" /><span>搜索知识、问题…</span><kbd>⌘ K</kbd></button
+          <button class="header-search" @click="openSearch">
+            <Search :size="16" /><span>搜索笔记、面试题…</span><kbd>⌘ K</kbd></button
           ><span class="online-badge" :class="{ offline: !online }"
             ><WifiOff v-if="!online" :size="13" /><span v-else class="status-dot"></span
             >{{ cacheLabel }}</span
+          ><a href="#/settings" class="icon-button" aria-label="设置与备份"
+            ><Settings :size="19" /></a
           ><button
             class="icon-button theme-toggle"
             :aria-label="theme === 'light' ? '切换深色模式' : '切换浅色模式'"
@@ -532,123 +597,60 @@ onUnmounted(() => {
 
       <main id="main-content" class="main-content" tabindex="-1">
         <template v-if="route === '/'">
-          <section class="welcome-section">
-            <div class="welcome-copy">
-              <div class="eyebrow"><span></span> 学习，是给未来的自己留一份答案</div>
-              <h1 tabindex="-1">今天，积累一点<span class="accent-period">。</span></h1>
-              <p>梳理知识，沉淀经验。让每一次复习，都有新的收获。</p>
-              <div class="welcome-stats">
-                <span
-                  ><strong>{{ articles.length }}</strong> 篇知识笔记</span
-                ><i></i
-                ><span
-                  ><strong>{{ questions.length }}</strong> 道面试题</span
-                ><i></i
-                ><span
-                  ><strong>{{ masteredCount }}</strong> 道已掌握</span
-                >
-              </div>
-            </div>
-            <a :href="`#/practice/${nextQuestion.id}`" class="focus-card"
-              ><div class="focus-top">
-                <span><Sparkles :size="14" /> 本次聚焦</span><ArrowUpRight :size="18" />
-              </div>
-              <div class="focus-title">C# 与 Unity<br />面试基础</div>
-              <div class="focus-bottom">
-                <span>{{ questions.length }} 道题，从理解到表达</span
-                ><span class="focus-arrow"><ArrowRight :size="16" /></span>
-              </div>
-              <div class="focus-orbit" aria-hidden="true"></div
-            ></a>
-          </section>
-
+          <div class="page-heading library-heading">
+            <div class="eyebrow">记录经验，需要时找得到</div>
+            <h1 tabindex="-1">笔记库<span class="accent-period">。</span></h1>
+            <p>按主题查阅、收藏和积累，让知识各有位置。</p>
+            <button class="secondary-button" @click="openSearch">
+              <Search :size="16" /> 搜索笔记
+            </button>
+          </div>
           <div class="dashboard-grid">
-            <div class="dashboard-main">
-              <section>
-                <div class="section-heading">
-                  <h2>
-                    <BookOpen :size="19" /> 知识笔记
-                    <span class="section-count">{{ articles.length }}</span>
-                  </h2>
-                  <span class="muted small">慢慢整理，持续更新</span>
-                </div>
-                <div class="filter-tabs" aria-label="按标签筛选文章">
-                  <button
-                    v-for="tag in tags"
-                    :key="tag"
-                    :class="{ selected: selectedTag === tag }"
-                    :aria-pressed="selectedTag === tag"
-                    @click="selectedTag = tag"
-                  >
-                    {{ tag === '全部' ? '全部内容' : tag }}
-                  </button>
-                </div>
-                <ArticleCard
-                  v-for="article in visibleArticles"
-                  :key="article.id"
-                  :article="article"
-                  :record="records[article.id]"
-                  @favorite="favorite($event, 'article')"
-                />
-              </section>
-              <section class="warmup-section">
-                <div class="section-heading">
-                  <h2><Layers :size="19" /> 面试热身</h2>
-                  <a href="#/practice" class="subtle-link">查看全部 <ArrowRight :size="14" /></a>
-                </div>
-                <div class="panel question-list">
-                  <QuestionRow
-                    v-for="(question, index) in questions.slice(0, 3)"
-                    :key="question.id"
-                    :question="question"
-                    :record="records[question.id]"
-                    :number="index + 1"
-                    @favorite="favorite($event, 'question')"
-                  />
-                </div>
-              </section>
-            </div>
-            <aside class="dashboard-aside">
-              <section class="panel progress-panel">
-                <div class="section-heading">
-                  <h2>学习概览</h2>
-                  <BrainCircuit :size="18" class="muted" />
-                </div>
-                <div
-                  class="progress-ring"
-                  :style="{ '--progress': `${(masteredCount / questions.length) * 100}%` }"
+            <section class="dashboard-main">
+              <div class="filter-tabs" aria-label="笔记视图">
+                <button
+                  :class="{ selected: noteView === 'all' }"
+                  :aria-pressed="noteView === 'all'"
+                  @click="noteView = 'all'"
                 >
-                  <div>
-                    <strong
-                      >{{ masteredCount }}<span>/{{ questions.length }}</span></strong
-                    ><small>已掌握</small>
-                  </div>
-                </div>
-                <div class="progress-legend">
-                  <span
-                    ><i class="legend-purple"></i>已掌握<strong>{{ masteredCount }}</strong></span
-                  ><span
-                    ><i class="legend-amber"></i>待巩固<strong>{{
-                      weakQuestions.length
-                    }}</strong></span
-                  ><span
-                    ><i class="legend-gray"></i>未自评<strong>{{
-                      questions.length - ratedCount
-                    }}</strong></span
-                  >
-                </div>
-                <a :href="`#/practice/${nextQuestion.id}`" class="primary-button wide"
-                  ><BrainCircuit :size="16" /> {{ ratedCount ? '继续练习' : '开始一次练习' }}
-                  <ArrowRight :size="15"
-                /></a>
-              </section>
+                  全部笔记 {{ articles.length }}
+                </button>
+                <button
+                  :class="{ selected: noteView === 'favorites' }"
+                  :aria-pressed="noteView === 'favorites'"
+                  @click="noteView = 'favorites'"
+                >
+                  我的收藏 {{ favoriteArticles.length }}
+                </button>
+              </div>
+              <NoteFilters v-model="noteFilters" />
+              <p class="muted small result-summary" role="status">
+                {{ visibleArticles.length }} 篇笔记
+              </p>
+              <ArticleCard
+                v-for="article in visibleArticles"
+                :key="article.id"
+                :article="article"
+                :record="records[article.id]"
+                @favorite="favorite($event, 'article')"
+              />
+              <div v-if="!visibleArticles.length" class="panel empty-state">
+                <BookOpen :size="30" />
+                <h2>
+                  {{ noteView === 'favorites' ? '这个范围还没有收藏' : '没有符合筛选条件的笔记' }}
+                </h2>
+                <p>可以清除筛选，或返回全部笔记继续查阅。</p>
+                <button class="secondary-button" @click="selectNoteDomain()">查看全部笔记</button>
+              </div>
+            </section>
+            <aside class="dashboard-aside">
               <section class="panel recent-panel">
                 <div class="section-heading">
                   <h2>最近阅读</h2>
                   <Clock3 :size="16" class="muted" />
                 </div>
-                <template v-if="recentArticle"
-                  ><a :href="`#/article/${recentArticle.id}`" class="recent-title">{{
+                <template v-if="recentArticle">
+                  <a :href="`#/article/${recentArticle.id}`" class="recent-title">{{
                     recentArticle.title
                   }}</a>
                   <div class="reading-track">
@@ -658,9 +660,10 @@ onUnmounted(() => {
                   </div>
                   <span class="muted small"
                     >已读 {{ Math.round((records[recentArticle.id]?.progress || 0) * 100) }}%</span
-                  ></template
-                ><template v-else
-                  ><div class="recent-empty-icon"><BookOpen :size="24" /></div>
+                  >
+                </template>
+                <template v-else
+                  ><BookOpen :size="24" />
                   <p>从一篇笔记开始</p>
                   <span class="muted small">阅读后，在这里接着看。</span></template
                 >
@@ -676,14 +679,15 @@ onUnmounted(() => {
 
         <template v-else-if="currentArticle">
           <div class="detail-topline">
-            <a href="#/" class="subtle-link"><ArrowLeft :size="16" /> 返回知识库</a
+            <a href="#/" class="subtle-link"><ArrowLeft :size="16" /> 返回笔记库</a
             ><span class="muted small">已读 {{ Math.round(readProgress * 100) }}%</span>
           </div>
           <div class="detail-layout">
             <article class="panel article-detail">
               <div class="detail-heading">
                 <div class="card-eyebrow">
-                  {{ currentArticle.topic }}
+                  {{ noteLocation(currentArticle, domains) }} ·
+                  {{ noteTypeLabels[currentArticle.noteType] }}
                   <span v-if="currentArticle.sample" class="sample-label">示例内容</span>
                 </div>
                 <h1 tabindex="-1">{{ currentArticle.title }}</h1>
@@ -721,6 +725,22 @@ onUnmounted(() => {
                       :fill="records[currentArticle.id]?.favorite ? 'currentColor' : 'none'"
                     />{{ records[currentArticle.id]?.favorite ? '已收藏' : '收藏笔记' }}
                   </button>
+                  <button
+                    class="subtle-link"
+                    :disabled="!ready"
+                    :aria-pressed="records[currentArticle.id]?.reviewState === 'active'"
+                    @click="
+                      setReview(
+                        currentArticle.id,
+                        'article',
+                        records[currentArticle.id]?.reviewState === 'active' ? 'none' : 'active',
+                      )
+                    "
+                  >
+                    <BrainCircuit :size="17" />{{
+                      records[currentArticle.id]?.reviewState === 'active' ? '移出复习' : '加入复习'
+                    }}
+                  </button>
                 </div>
               </div>
               <details class="mobile-toc">
@@ -743,13 +763,10 @@ onUnmounted(() => {
                 :applicability="currentArticle.applicability"
                 :verified-at="currentArticle.verifiedAt"
               />
-              <section class="related-section">
-                <h2>把理解变成表达</h2>
-                <p>用关联面试题，检查自己是否真正讲清楚了。</p>
-                <a
-                  :href="`#/practice/${questions.find((question) => question.articleIds.includes(currentArticle!.id))?.id}`"
-                  class="primary-button"
-                  >练习关联题目 <ArrowRight :size="16"
+              <section v-if="relatedQuestion" class="related-section">
+                <h2>关联面试题</h2>
+                <a :href="`#/practice/${relatedQuestion.id}`" class="subtle-link"
+                  >查看关联题目 <ArrowRight :size="16"
                 /></a>
               </section>
             </article>
@@ -802,6 +819,7 @@ onUnmounted(() => {
               v-for="filter in [
                 { id: 'all', label: '全部' },
                 { id: 'unrated', label: '未自评' },
+                { id: 'favorites', label: '已收藏' },
                 { id: 'unknown', label: '不会' },
                 { id: 'uncertain', label: '模糊' },
                 { id: 'mastered', label: '掌握' },
@@ -906,6 +924,9 @@ onUnmounted(() => {
               />
               <div class="self-rating">
                 <h2>现在，你掌握得怎么样？</h2>
+                <p class="muted small">
+                  标记“不会”或“模糊”会加入待巩固；标记“掌握”会完成本次复习。
+                </p>
                 <div class="rating-buttons">
                   <button
                     v-for="(label, key) in masteryLabels"
@@ -944,89 +965,144 @@ onUnmounted(() => {
 
         <template v-else-if="route === '/review'">
           <div class="page-heading">
-            <div class="eyebrow">让学过的，留下来</div>
+            <div class="eyebrow">主动巩固，逐步积累</div>
             <h1 tabindex="-1">我的复习<span class="accent-period">。</span></h1>
-            <p>回到还不熟悉的地方，一次解决一个问题。</p>
+            <p>笔记主动加入，题目根据自评加入；收藏和阅读不会创建复习任务。</p>
           </div>
-          <div class="review-stats">
-            <div class="panel">
-              <span class="stat-icon purple"><CircleCheck :size="21" /></span>
-              <div>
-                <strong>{{ masteredCount }}</strong
-                ><span>已掌握</span>
-              </div>
-            </div>
-            <div class="panel">
-              <span class="stat-icon amber"><RefreshCw :size="21" /></span>
-              <div>
-                <strong>{{ weakQuestions.length }}</strong
-                ><span>待巩固</span>
-              </div>
-            </div>
-            <div class="panel">
-              <span class="stat-icon blue"><Bookmark :size="21" /></span>
-              <div>
-                <strong>{{ favoriteCount }}</strong
-                ><span>已收藏</span>
-              </div>
-            </div>
-          </div>
-          <div class="filter-tabs">
+          <div class="filter-tabs" aria-label="复习内容类型">
             <button
-              v-for="filter in [
-                { id: 'weak', label: '待巩固' },
-                { id: 'favorites', label: '已收藏' },
-                { id: 'all', label: '全部题目' },
-              ]"
-              :key="filter.id"
-              :class="{ selected: reviewFilter === filter.id }"
-              :aria-pressed="reviewFilter === filter.id"
-              @click="reviewFilter = filter.id"
+              :class="{ selected: reviewKind === 'article' }"
+              :aria-pressed="reviewKind === 'article'"
+              @click="reviewKind = 'article'"
             >
-              {{ filter.label }}
+              笔记
+            </button>
+            <button
+              :class="{ selected: reviewKind === 'question' }"
+              :aria-pressed="reviewKind === 'question'"
+              @click="reviewKind = 'question'"
+            >
+              题目
             </button>
           </div>
-          <div v-if="reviewQuestions.length" class="panel question-list">
-            <QuestionRow
-              v-for="question in reviewQuestions"
-              :key="question.id"
-              :question="question"
-              :record="records[question.id]"
-              :number="questions.indexOf(question) + 1"
-              @favorite="favorite($event, 'question')"
-            />
+          <div class="filter-tabs" aria-label="复习状态">
+            <button
+              :class="{ selected: reviewFilter === 'active' }"
+              :aria-pressed="reviewFilter === 'active'"
+              @click="reviewFilter = 'active'"
+            >
+              待复习
+            </button>
+            <button
+              :class="{ selected: reviewFilter === 'completed' }"
+              :aria-pressed="reviewFilter === 'completed'"
+              @click="reviewFilter = 'completed'"
+            >
+              已完成
+            </button>
+          </div>
+          <div v-if="reviewKind === 'article' && reviewArticles.length" class="panel review-list">
+            <div v-for="article in reviewArticles" :key="article.id" class="review-item">
+              <a :href="`#/article/${article.id}`"
+                ><h2>{{ article.title }}</h2>
+                <span class="muted small"
+                  >{{ noteLocation(article, domains) }} ·
+                  {{ noteTypeLabels[article.noteType] }}</span
+                ></a
+              >
+              <div class="review-actions">
+                <button
+                  class="secondary-button"
+                  :disabled="!ready"
+                  @click="
+                    setReview(
+                      article.id,
+                      'article',
+                      reviewFilter === 'active' ? 'completed' : 'active',
+                    )
+                  "
+                >
+                  {{ reviewFilter === 'active' ? '完成复习' : '再次复习' }}</button
+                ><button
+                  class="subtle-link"
+                  :disabled="!ready"
+                  @click="setReview(article.id, 'article', 'none')"
+                >
+                  移出复习
+                </button>
+              </div>
+            </div>
           </div>
           <div
-            v-else-if="reviewFilter !== 'favorites' || !favoriteArticles.length"
-            class="panel empty-state"
+            v-else-if="reviewKind === 'question' && reviewQuestions.length"
+            class="panel review-list"
           >
+            <div v-for="question in reviewQuestions" :key="question.id" class="review-item">
+              <QuestionRow
+                :question="question"
+                :record="records[question.id]"
+                :number="questions.indexOf(question) + 1"
+                @favorite="favorite($event, 'question')"
+              />
+              <div class="review-actions">
+                <button
+                  class="secondary-button"
+                  :disabled="!ready"
+                  @click="
+                    setReview(
+                      question.id,
+                      'question',
+                      reviewFilter === 'active' ? 'completed' : 'active',
+                    )
+                  "
+                >
+                  {{ reviewFilter === 'active' ? '完成本次复习' : '再次复习' }}</button
+                ><button
+                  class="subtle-link"
+                  :disabled="!ready"
+                  @click="setReview(question.id, 'question', 'none')"
+                >
+                  移出复习
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="panel empty-state">
             <BrainCircuit :size="32" />
-            <h2>
-              {{ reviewFilter === 'favorites' ? '收藏值得再看的内容' : '从一次真实的自评开始' }}
-            </h2>
+            <h2>{{ reviewFilter === 'completed' ? '还没有完成的复习' : '当前没有待复习内容' }}</h2>
             <p>
               {{
-                reviewFilter === 'favorites'
-                  ? '点击文章或题目旁的书签，就能在这里找到它。'
-                  : '标记为“不会”或“模糊”的题目，会集中出现在这里。'
+                reviewKind === 'article'
+                  ? '在笔记详情中选择“加入复习”，以后回到这里继续。'
+                  : '将题目标记为“不会”或“模糊”，就会加入待巩固。'
               }}
             </p>
-            <a href="#/practice" class="primary-button">去练习几道题 <ArrowRight :size="16" /></a>
-          </div>
-          <div
-            v-if="reviewFilter === 'favorites' && favoriteArticles.length"
-            class="favorite-articles"
-          >
-            <h2>收藏的笔记</h2>
-            <a
-              v-for="article in favoriteArticles"
-              :key="article.id"
-              :href="`#/article/${article.id}`"
-              class="panel favorite-article-link"
-              ><BookOpen :size="21" /><span>{{ article.title }}</span
-              ><ChevronRight :size="18"
+            <a :href="reviewKind === 'article' ? '#/' : '#/practice'" class="primary-button"
+              >{{ reviewKind === 'article' ? '浏览笔记' : '去面试练习' }}<ArrowRight :size="16"
             /></a>
           </div>
+        </template>
+
+        <template v-else-if="route === '/settings'">
+          <div class="page-heading">
+            <h1 tabindex="-1">设置与备份<span class="accent-period">。</span></h1>
+            <p>阅读偏好和学习记录，由你掌握。</p>
+          </div>
+          <section class="panel preferences-panel">
+            <h2>阅读设置</h2>
+            <div class="review-actions">
+              <button class="secondary-button" @click="toggleTheme">
+                {{ theme === 'light' ? '切换深色模式' : '切换浅色模式' }}</button
+              ><button class="secondary-button" :disabled="fontSize <= 16" @click="changeFont(-1)">
+                缩小字号</button
+              ><span>{{ fontSize }} px</span
+              ><button class="secondary-button" :disabled="fontSize >= 24" @click="changeFont(1)">
+                放大字号</button
+              ><button v-if="!installed" class="secondary-button" @click="requestInstall">
+                安装到桌面
+              </button>
+            </div>
+          </section>
           <section class="panel backup-panel">
             <div class="backup-title">
               <span class="stat-icon"><HardDrive :size="22" /></span>
@@ -1056,16 +1132,34 @@ onUnmounted(() => {
         <template v-else-if="route === '/search'">
           <div class="page-heading">
             <div class="eyebrow">需要的时候，找得到</div>
-            <h1 tabindex="-1">搜索知识<span class="accent-period">。</span></h1>
+            <h1 tabindex="-1">搜索<span class="accent-period">。</span></h1>
             <p>从一个关键字，回到一个知识点。</p>
           </div>
+          <div class="filter-tabs" aria-label="搜索范围">
+            <button
+              :class="{ selected: searchScope === 'article' }"
+              :aria-pressed="searchScope === 'article'"
+              @click="searchScope = 'article'"
+            >
+              笔记{{ query.trim() ? ` ${foundArticles.length}` : '' }}</button
+            ><button
+              :class="{ selected: searchScope === 'question' }"
+              :aria-pressed="searchScope === 'question'"
+              @click="searchScope = 'question'"
+            >
+              面试题{{ query.trim() ? ` ${foundQuestions.length}` : '' }}
+            </button>
+          </div>
+          <NoteFilters v-if="searchScope === 'article'" v-model="searchFilters" />
           <div class="search-box panel">
             <Search :size="22" /><input
               id="site-search"
               v-model="query"
               type="search"
-              aria-label="搜索知识和面试题"
-              placeholder="搜索知识、面试题或标签…"
+              :aria-label="searchScope === 'article' ? '搜索笔记' : '搜索面试题'"
+              :placeholder="
+                searchScope === 'article' ? '搜索笔记正文、标题或标签…' : '搜索面试题、答案或标签…'
+              "
               autocomplete="off"
             /><button v-if="query" class="icon-button" aria-label="清空搜索" @click="query = ''">
               <X :size="18" />
@@ -1083,11 +1177,15 @@ onUnmounted(() => {
           </div>
           <template v-else
             ><p class="search-result-count">
-              找到 <strong>{{ foundArticles.length + foundQuestions.length }}</strong> 条相关内容
+              找到
+              <strong>{{
+                searchScope === 'article' ? foundArticles.length : foundQuestions.length
+              }}</strong>
+              条相关{{ searchScope === 'article' ? '笔记' : '面试题' }}
             </p>
-            <section v-if="foundArticles.length">
+            <section v-if="searchScope === 'article' && foundArticles.length">
               <div class="section-heading">
-                <h2><BookOpen :size="18" /> 知识笔记</h2>
+                <h2><BookOpen :size="18" /> 笔记</h2>
               </div>
               <a
                 v-for="article in foundArticles"
@@ -1102,7 +1200,10 @@ onUnmounted(() => {
                 <ArrowUpRight :size="18"
               /></a>
             </section>
-            <section v-if="foundQuestions.length" class="search-questions">
+            <section
+              v-if="searchScope === 'question' && foundQuestions.length"
+              class="search-questions"
+            >
               <div class="section-heading">
                 <h2><Layers :size="18" /> 面试题</h2>
               </div>
@@ -1117,11 +1218,14 @@ onUnmounted(() => {
                 />
               </div>
             </section>
-            <div v-if="!foundArticles.length && !foundQuestions.length" class="panel empty-state">
+            <div
+              v-if="searchScope === 'article' ? !foundArticles.length : !foundQuestions.length"
+              class="panel empty-state"
+            >
               <Search :size="32" />
               <h2>还没有找到相关内容</h2>
               <p>换一个简短关键字，或试试标签名称。</p>
-              <button class="secondary-button" @click="query = ''">重新搜索</button>
+              <button class="secondary-button" @click="clearSearch">清除搜索与筛选</button>
             </div></template
           >
         </template>
@@ -1129,8 +1233,8 @@ onUnmounted(() => {
         <section v-if="!validPage" class="panel empty-state">
           <BookOpen :size="32" />
           <h1 tabindex="-1">这页内容暂时找不到</h1>
-          <p>可以返回知识库，继续查找其他内容。</p>
-          <a href="#/" class="primary-button">返回知识库 <ArrowRight :size="16" /></a>
+          <p>可以返回笔记库，继续查找其他内容。</p>
+          <a href="#/" class="primary-button">返回笔记库 <ArrowRight :size="16" /></a>
         </section>
         <footer class="page-footer">
           <span>BetterSelf<span class="brand-period">.</span></span
@@ -1146,7 +1250,7 @@ onUnmounted(() => {
         :class="{ active: activePath === item.path }"
         :aria-current="activePath === item.path ? 'page' : undefined"
         ><component :is="item.icon" :size="21" /><span>{{ item.title }}</span
-        ><i v-if="item.path === '/review' && weakQuestions.length" class="mobile-nav-dot"></i
+        ><i v-if="item.path === '/review' && activeReviewCount" class="mobile-nav-dot"></i
       ></a>
     </nav>
   </div>

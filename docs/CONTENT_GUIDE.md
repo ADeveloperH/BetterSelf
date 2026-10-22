@@ -22,18 +22,21 @@
 
 文章使用 Markdown，头部元信息包含以下字段：
 
-| 字段          | 含义                               |
-| ------------- | ---------------------------------- |
-| id            | 稳定唯一标识，改名或调整目录时保留 |
-| title         | 标题                               |
-| topic         | 所属专题                           |
-| tags          | 主题标签                           |
-| summary       | 简短摘要                           |
-| updatedAt     | 最近内容更新时间，YYYY-MM-DD       |
-| verifiedAt    | 最近核验日期；未核验时留空         |
-| sample        | 是否示例内容                       |
-| applicability | 适用语言、Unity 版本或运行环境     |
-| sources       | 官方文档与其他确实使用的来源       |
+| 字段          | 含义                                                          |
+| ------------- | ------------------------------------------------------------- |
+| id            | 稳定唯一标识，改名或调整目录时保留                            |
+| title         | 标题                                                          |
+| topic         | 所属专题展示名，独立于网站主分类                              |
+| domainId      | `content/taxonomy.yaml` 中的稳定主题 ID                       |
+| categoryId    | 主题内的稳定子分类 ID                                         |
+| noteType      | concept / guide / troubleshooting / retrospective / resources |
+| tags          | 主题标签                                                      |
+| summary       | 简短摘要                                                      |
+| updatedAt     | 最近内容更新时间，YYYY-MM-DD                                  |
+| verifiedAt    | 最近核验日期；未核验时用 YAML `null` 或省略，不使用导入日期   |
+| sample        | 是否示例内容                                                  |
+| applicability | 适用语言、Unity 版本或运行环境                                |
+| sources       | 官方文档与其他确实使用的来源                                  |
 
 正文建议依次覆盖：
 
@@ -95,3 +98,18 @@
 6. 手机获取更新，检查对应内容和历史学习记录。
 
 第一批示例使用过程中，优先调整影响写作和复习的模板字段；批量整理开始后保持 ID 和必要字段稳定。
+
+## 分类与来源规则
+
+每篇笔记只有一个主题和子分类，类型独立于主题。网站只展示有已整理内容的分类；原始有道路径、私人标题与迁移索引只放在被 Git 忽略的本地档案中。
+
+外部来源沿用 `title` 与 HTTPS `url`，也可显式设置 `kind: external`。个人实践使用 `kind: personal` 与真实的 `title` 署名，不填写 `url`。例如：
+
+```yaml
+sources:
+  - kind: personal
+    title: 个人项目实践记录
+verifiedAt: null
+```
+
+未核验内容会显示“内容尚未核验”。导出、排版与图片完整性检查不视为技术内容核验；适用环境和验证边界写在 `applicability`。

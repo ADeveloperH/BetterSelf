@@ -1,5 +1,6 @@
 export type Mastery = 'unknown' | 'uncertain' | 'mastered'
 export type ContentKind = 'article' | 'question'
+export type ReviewState = 'none' | 'active' | 'completed'
 export interface LearningRecord {
   id: string
   kind: ContentKind
@@ -7,30 +8,41 @@ export interface LearningRecord {
   favorite: boolean
   progress: number
   lastViewedAt: string | null
+  reviewState: ReviewState
   updatedAt: string
 }
 export interface Backup {
   app: 'BetterSelf'
-  schemaVersion: 1
+  schemaVersion: 2
   exportedAt: string
   records: LearningRecord[]
 }
 export interface Source {
   title: string
-  url: string
+  kind?: 'external' | 'personal'
+  url?: string
 }
+export interface Domain {
+  id: string
+  title: string
+  categories: { id: string; title: string }[]
+}
+export type NoteType = 'concept' | 'guide' | 'troubleshooting' | 'retrospective' | 'resources'
 export interface Article {
   id: string
   title: string
   summary: string
   topic: string
+  domainId: string
+  categoryId: string
+  noteType: NoteType
   tags: string[]
   html: string
   toc: { id: string; title: string }[]
   minutes: number
   sample: boolean
   updatedAt: string
-  verifiedAt: string
+  verifiedAt: string | null
   applicability: string
   sources: Source[]
   searchText: string
@@ -49,7 +61,7 @@ export interface Question {
   articleIds: string[]
   sample: boolean
   updatedAt: string
-  verifiedAt: string
+  verifiedAt: string | null
   applicability: string
   sources: Source[]
   searchText: string

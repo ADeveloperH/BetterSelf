@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { fileURLToPath } from 'node:url'
 import { compileContent, renderMarkdown, validateContent } from '../scripts/content.mjs'
 import { matchesSearch } from '../src/lib/content'
+import { emptyNoteFilters, matchesNoteFilters, noteLocation } from '../src/lib/notes'
+import type { Article } from '../src/types'
 
 const collection = await compileContent(fileURLToPath(new URL('../content/', import.meta.url)))
+const csharpArticle = collection.articles.find((article) => article.id === 'csharp-memory-basics')!
 const fixture = () => ({
   articles: collection.articles.map((article) => ({ ...article, body: '正文' })),
   questions: structuredClone(collection.questions),
@@ -11,9 +14,9 @@ const fixture = () => ({
 
 describe('内容进入网站前的校验', () => {
   it('实际示例可以构建，并保留稳定的内容指纹', async () => {
-    expect(collection.articles).toHaveLength(1)
+    expect(collection.articles).toHaveLength(10)
     expect(collection.questions).toHaveLength(5)
-    expect(collection.articles[0].toc.length).toBeGreaterThan(0)
+    expect(collection.articles.every((article) => article.toc.length > 0)).toBe(true)
     expect(
       (await compileContent(fileURLToPath(new URL('../content/', import.meta.url)))).contentVersion,
     ).toBe(collection.contentVersion)
@@ -42,11 +45,34 @@ describe('内容进入网站前的校验', () => {
     expect(html).toContain('rel="noopener noreferrer"')
   })
   it('中文、C# 和全角输入能够检索，并支持多个关键字', () => {
-    expect(matchesSearch(collection.articles[0].searchText, '引用类型')).toBe(true)
-    expect(matchesSearch(collection.articles[0].searchText, 'Ｃ＃ Unity')).toBe(true)
+    expect(matchesSearch(csharpArticle.searchText, '引用类型')).toBe(true)
+    expect(matchesSearch(csharpArticle.searchText, 'Ｃ＃ Unity')).toBe(true)
     expect(collection.questions.some((question) => matchesSearch(question.searchText, 'GC'))).toBe(
       true,
     )
-    expect(matchesSearch(collection.articles[0].searchText, '不存在的关键词')).toBe(false)
+    expect(matchesSearch(csharpArticle.searchText, '不存在的关键词')).toBe(false)
+  })
+  it('个人笔记允许真实署名和未核验状态，仍拒绝不安全外链和不存在的分类', () => {
+    const { articles, questions } = fixture()
+    articles[0].verifiedAt = null
+    articles[0].sources = [{ kind: 'personal', title: '个人实践记录' }]
+    expect(() => validateContent(articles, questions, collection.domains)).not.toThrow()
+    articles[0].categoryId = 'missing'
+    expect(() => validateContent(articles, questions, collection.domains)).toThrow('分类不存在')
+  })
+  it('主题、子分类、类型与标签组合筛选，分类展示与搜索一致', () => {
+    const article = csharpArticle as Article
+    const filters = {
+      ...emptyNoteFilters(),
+      domain: 'programming',
+      category: 'csharp',
+      type: 'concept',
+      tag: 'Unity',
+    }
+    expect(matchesNoteFilters(article, filters)).toBe(true)
+    expect(matchesNoteFilters(article, { ...filters, category: 'java' })).toBe(false)
+    expect(matchesNoteFilters(article, { ...filters, tag: 'Android' })).toBe(false)
+    expect(noteLocation(article, collection.domains)).toBe('编程语言与基础 / C#')
+    expect(matchesSearch(article.searchText, '编程语言')).toBe(true)
   })
 })
