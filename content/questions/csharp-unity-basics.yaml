@@ -1,0 +1,149 @@
+- id: q-value-reference
+  title: 值类型和引用类型的主要区别是什么？
+  topic: C# 与 Unity 面试基础
+  tags: [C#, 类型系统]
+  level: 基础
+  shortAnswer: 普通赋值时，值类型复制值，引用类型复制对象引用。两个引用变量可能指向同一个对象；包含引用字段的结构体也可能共享内部对象。
+  explanation: |
+    可以从一段最小代码说明“复制引用”和“复制对象”的区别：
+
+    ```csharp
+    var original = new List<int> { 1 };
+    var alias = original;
+    alias.Add(2);
+    // original 和 alias 指向同一个 List，元素数都为 2。
+    ```
+
+    继续追问时，分别分析值类型字段、引用类型字段，以及是否用了 `ref` 参数。回答应建立在具体代码的语义上。
+  pitfalls:
+    - 把值类型简单描述为“永远在栈上”。
+    - 把结构体赋值误认为会深拷贝所有内部对象。
+  followUps:
+    - 结构体内有一个 List 字段，复制后修改 List 会发生什么？
+    - 普通引用类型参数与 ref 参数有什么区别？
+  articleIds: [csharp-memory-basics]
+  applicability: C# 普通赋值与参数语义；具体运行时的存储优化另行测量。
+  updatedAt: '2026-10-22'
+  verifiedAt: '2026-10-22'
+  sample: true
+  sources:
+    - title: Microsoft · C# 类型规范
+      url: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/types
+
+- id: q-boxing
+  title: 什么是装箱与拆箱？如何识别代码中的装箱？
+  topic: C# 与 Unity 面试基础
+  tags: [C#, 装箱, 内存管理]
+  level: 原理
+  shortAnswer: 装箱把值类型转换为 object 或其实现的接口类型，通常需要创建承载该值的对象；拆箱从这个对象中提取对应的值类型。
+  explanation: |
+    ```csharp
+    int score = 42;
+    object boxed = score;
+    int restored = (int)boxed;
+    ```
+
+    定位时先检查值传给了什么类型的参数，再看调用点和泛型约束。对实际热路径，结合编译结果和目标运行时的分配数据验证。拆箱还要求原来的装箱类型匹配。
+  pitfalls:
+    - 认为所有类型转换都会装箱。
+    - 认为把装箱的 int 直接拆成 long 就等同于数值转换。
+  followUps:
+    - List<int> 与 List<object> 保存整数时有什么区别？
+    - 如何用工具证明一个高频调用确实发生了分配？
+  articleIds: [csharp-memory-basics]
+  applicability: C# 装箱语义；Unity 后端的优化效果以实际测量为准。
+  updatedAt: '2026-10-22'
+  verifiedAt: '2026-10-22'
+  sample: true
+  sources:
+    - title: Microsoft · 装箱与拆箱
+      url: https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/types/boxing-and-unboxing
+
+- id: q-string-builder
+  title: string 的不可变性意味着什么？何时考虑 StringBuilder？
+  topic: C# 与 Unity 面试基础
+  tags: [C#, 字符串]
+  level: 基础
+  shortAnswer: string 的内容创建后不能原地修改。需要反复拼接大量片段时，可以考虑 StringBuilder；少量拼接应结合编译器和实际开销判断。
+  explanation: |
+    ```csharp
+    var builder = new StringBuilder();
+    for (int index = 0; index < labels.Count; index++)
+    {
+        builder.Append(labels[index]);
+    }
+    string text = builder.ToString();
+    ```
+
+    要比较的是完整路径，包括构建器、容量扩展和最终字符串的成本。StringBuilder 也需要内存，适合放在实际场景中测量。
+  pitfalls:
+    - 认为任何字符串拼接都应该换成 StringBuilder。
+    - 认为用了 StringBuilder 就完全没有分配。
+  followUps:
+    - 高频更新 UI 文本时，哪些更新其实可以省略？
+    - 你会如何设计一次可信的对比测试？
+  articleIds: [csharp-memory-basics]
+  applicability: .NET 字符串基础；性能取决于实际使用方式。
+  updatedAt: '2026-10-22'
+  verifiedAt: '2026-10-22'
+  sample: true
+  sources:
+    - title: Microsoft · StringBuilder
+      url: https://learn.microsoft.com/en-us/dotnet/standard/base-types/stringbuilder
+
+- id: q-gc-alloc
+  title: Unity 每帧都有 GC Alloc，你会如何排查？
+  topic: C# 与 Unity 面试基础
+  tags: [Unity, GC, 性能分析]
+  level: 场景
+  shortAnswer: 先固定复现场景并在目标 Player 采样，找到反复分配的调用点，再修改一个明确原因，对比修改前后的分配与帧耗时。
+  explanation: |
+    按“复现 → 采样 → 调用栈 → 修改 → 对比”的顺序记录证据。重点检查临时集合、字符串和可能装箱的热路径。性能数据注明设备、Unity 版本、脚本后端和构建配置。
+
+    仅看到分配并不能判断它是否造成了可感知的卡顿，还要结合频率、规模和帧时间分析。
+  pitfalls:
+    - 将 Editor 中的数值直接等同于设备上的结果。
+    - 为减少分配而引入过多缓存，却不检查内存占用与行为。
+  followUps:
+    - 为什么减少托管分配之后，还需要检查帧时间？
+    - 怎样证明这次修改没有引入功能回归？
+  articleIds: [csharp-memory-basics]
+  applicability: 排查方法参考 Unity 2022.3；具体工具界面与数据按项目版本核验。
+  updatedAt: '2026-10-22'
+  verifiedAt: '2026-10-22'
+  sample: true
+  sources:
+    - title: Unity 2022.3 · 垃圾回收最佳实践
+      url: https://docs.unity3d.com/2022.3/Documentation/Manual/performance-garbage-collection-best-practices.html
+
+- id: q-coroutines
+  title: Unity 协程与多线程有什么区别？
+  topic: C# 与 Unity 面试基础
+  tags: [Unity, 协程]
+  level: 原理
+  shortAnswer: Unity 协程通过挂起和恢复，把工作分布到不同帧或时机。协程中的同步代码仍在主线程执行；耗时计算并不会因为放入协程就自动转移到后台。
+  explanation: |
+    ```csharp
+    IEnumerator ShowSteps()
+    {
+        ShowFirstStep();
+        yield return null;
+        ShowSecondStep();
+    }
+    ```
+
+    这段代码表达的是执行时机。选择多线程方案时，还需要考虑共享数据和 Unity API 的线程限制。
+  pitfalls:
+    - 认为 yield return null 会让前面的计算在后台运行。
+    - 认为把大循环放进协程就自动消除了单帧卡顿。
+  followUps:
+    - 如何把一次大循环拆成多帧完成？
+    - 哪些工作适合交给 Job System 或后台任务？
+  articleIds: [csharp-memory-basics]
+  applicability: Unity 协程的主线程语义；参考 Unity 6.3 文档。
+  updatedAt: '2026-10-22'
+  verifiedAt: '2026-10-22'
+  sample: true
+  sources:
+    - title: Unity 6.3 · 编写与运行协程
+      url: https://docs.unity.com/en-us/engine/6000.3/manual/scripting/coroutines-section/coroutines

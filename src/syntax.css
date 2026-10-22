@@ -1,0 +1,25 @@
+.hljs-comment,
+.hljs-quote {
+  color: #8f93aa;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal {
+  color: #c6a5ee;
+}
+.hljs-string,
+.hljs-doctag {
+  color: #c0d9ab;
+}
+.hljs-number {
+  color: #e7bd96;
+}
+.hljs-title,
+.hljs-built_in,
+.hljs-type {
+  color: #a8cce8;
+}
+.hljs-params,
+.hljs-variable {
+  color: #dedde9;
+}

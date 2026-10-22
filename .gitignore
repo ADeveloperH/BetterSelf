@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-*/
+.artifacts/
+.DS_Store
+.env
+.env.*
+!.env.example
+src/generated/
+coverage/
+*.local
