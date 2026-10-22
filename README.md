@@ -2,7 +2,7 @@
 
 面向个人成长的 Unity 知识与面试复习 PWA。电脑用于整理内容，Android 手机用于阅读、检索和练习。
 
-本地演示版已完成：一篇 C# 笔记、5 道面试题，以及阅读、自评、搜索、收藏和备份。PWA 缓存与版本更新已在桌面浏览器验证，公网发布与 Android 实机验收待完成。
+网站已发布：一篇 C# 笔记、5 道面试题，以及阅读、自评、搜索、收藏和备份。PWA 缓存与版本更新已在桌面浏览器验证，Android 实机验收待完成。
 
 - [实施计划](docs/IMPLEMENTATION_PLAN.md)：首版范围、技术方案、开发顺序和验收标准。
 - [内容规范](docs/CONTENT_GUIDE.md)：知识文章、面试题的模板和第一批示例范围。
@@ -11,13 +11,13 @@
 
 源码仓库：[ADeveloperH/BetterSelf](https://github.com/ADeveloperH/BetterSelf)。
 
-网站地址：[BetterSelf](https://adeveloperh.github.io/BetterSelf/)。首次发布的进度可在仓库的 Actions 页面查看。
+网站地址：[BetterSelf](https://adeveloperh.github.io/BetterSelf/)。首次自动测试、构建和发布均已成功，后续发布进度可在仓库的 Actions 页面查看。
 
 已确认的要求：
 
 - 暂用名称 BetterSelf。
 - 主要方向为 Unity，包含与 Android 结合的客户端开发。
-- 优先保证 Android 手机体验；用户提供的手机型号为“红米k100pro”，浏览器与系统版本待确认。
+- 优先保证 Android 手机体验；用户提供的手机型号为“红米k100pro”，使用手机自带浏览器，具体浏览器与系统版本待实机确认。
 - 网站运行和发布采用免费方案，使用平台提供的网址；是否公开没有特别要求。
 - 第一批示例为“C# 与 Unity 面试基础”。
 - 先跑通完整使用流程，再批量整理历史经验和知识。
