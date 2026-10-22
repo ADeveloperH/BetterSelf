@@ -37,6 +37,7 @@ import { articles, questions, domains, matchesSearch } from './lib/content'
 import { emptyNoteFilters, matchesNoteFilters, noteLocation, noteTypeLabels } from './lib/notes'
 import { createLearningStore, parseBackup } from './lib/storage'
 import { usePwa } from './lib/pwa'
+import { Navigation, type TabPath } from './lib/navigation'
 import type { Backup, ContentKind, LearningRecord, Mastery, ReviewState } from './types'
 
 const document = window.document
@@ -49,7 +50,21 @@ const readRoute = () => {
     return '/not-found'
   }
 }
-const route = ref(readRoute())
+let navigation = new Navigation(readRoute())
+try {
+  const saved = JSON.parse(sessionStorage.getItem('betterself-navigation-v1') || 'null')
+  const marker = history.state?.betterselfPage
+  if (saved && Array.isArray(saved.pages) && Array.isArray(saved.visits) && marker) {
+    const candidate = Object.assign(new Navigation('/'), saved)
+    if (candidate.restore(marker.cursor, marker.id) && candidate.current.route === readRoute())
+      navigation = candidate
+  }
+} catch {
+  /* Navigation also works when session storage is unavailable. */
+}
+history.scrollRestoration = 'manual'
+const currentPage = ref(navigation.current)
+const route = ref(currentPage.value.route)
 const records = ref<Record<string, LearningRecord>>({})
 const ready = ref(false)
 const storageError = ref('')
@@ -109,17 +124,26 @@ const currentQuestion = computed(() =>
     ? questions.find((item) => item.id === route.value.slice(10))
     : undefined,
 )
-const activePath = computed(() =>
-  route.value.startsWith('/article/')
-    ? '/'
-    : route.value.startsWith('/practice')
-      ? '/practice'
-      : route.value,
-)
-const pageTitle = computed(() =>
-  route.value === '/settings'
-    ? '设置与备份'
-    : nav.find((item) => item.path === activePath.value)?.title || '页面未找到',
+const activePath = computed(() => currentPage.value.tab)
+const isDetail = computed(() => currentPage.value.parent !== undefined)
+const backLabel = computed(() => {
+  const parentRoute = navigation.pages[currentPage.value.parent!]?.route
+  return (
+    articles.find((item) => parentRoute === `/article/${item.id}`)?.title ||
+    questions.find((item) => parentRoute === `/practice/${item.id}`)?.title ||
+    (parentRoute === '/settings'
+      ? '设置与备份'
+      : nav.find((item) => item.path === parentRoute)?.title) ||
+    '上一页'
+  )
+})
+const pageTitle = computed(
+  () =>
+    currentArticle.value?.title ||
+    currentQuestion.value?.title ||
+    (route.value === '/settings'
+      ? '设置与备份'
+      : nav.find((item) => item.path === route.value)?.title || '页面未找到'),
 )
 const masteryLabels: Record<Mastery, string> = {
   unknown: '不会',
@@ -265,10 +289,98 @@ async function setReview(id: string, kind: ContentKind, reviewState: ReviewState
     )
 }
 function openSearch() {
-  if (route.value !== '/search')
-    searchScope.value = activePath.value === '/practice' ? 'question' : 'article'
-  location.hash = '/search'
+  capturePage()
+  navigation.openRoot('/search')
+  writeHistory()
+  showPage()
   void nextTick(() => document.querySelector<HTMLInputElement>('#site-search')?.focus())
+}
+
+function persistNavigation() {
+  try {
+    sessionStorage.setItem('betterself-navigation-v1', JSON.stringify(navigation))
+  } catch {
+    /* Optional session cache. */
+  }
+}
+function capturePage() {
+  void saveReading()
+  if (!restoring.value) currentPage.value.scroll = window.scrollY
+  currentPage.value.revealed = revealed.value
+  currentPage.value.view = JSON.parse(
+    JSON.stringify({
+      query: query.value,
+      noteFilters: noteFilters.value,
+      searchFilters: searchFilters.value,
+      noteView: noteView.value,
+      searchScope: searchScope.value,
+      practiceFilter: practiceFilter.value,
+      reviewKind: reviewKind.value,
+      reviewFilter: reviewFilter.value,
+    }),
+  )
+}
+function writeHistory(replace = false) {
+  const state = {
+    ...history.state,
+    betterselfPage: { id: navigation.current.id, cursor: navigation.cursor },
+  }
+  history[replace ? 'replaceState' : 'pushState'](state, '', `#${navigation.current.route}`)
+  persistNavigation()
+}
+function showPage() {
+  currentPage.value = navigation.current
+  route.value = navigation.current.route
+  persistNavigation()
+  void activateRoute()
+}
+function navigate(path: string, replace = false) {
+  capturePage()
+  navigation.open(path)
+  writeHistory(replace)
+  showPage()
+}
+function switchTab(path: string) {
+  if (activePath.value === path) return
+  capturePage()
+  navigation.selectTab(path as TabPath)
+  writeHistory()
+  showPage()
+}
+function goBack() {
+  capturePage()
+  const distance = navigation.backDistance()
+  if (distance) {
+    history.go(distance)
+    return
+  }
+  navigation.back()
+  writeHistory()
+  showPage()
+}
+function onInternalLink(event: MouseEvent) {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  )
+    return
+  const anchor = (event.target as Element).closest<HTMLAnchorElement>('a[href]')
+  const href = anchor?.getAttribute('href')
+  if (!href?.startsWith('#/') || anchor?.target || anchor?.hasAttribute('download')) return
+  event.preventDefault()
+  try {
+    navigate(decodeURIComponent(href.slice(1)))
+  } catch {
+    navigate('/not-found')
+  }
+}
+function saveSession() {
+  capturePage()
+  persistNavigation()
 }
 
 let scrollTimer: ReturnType<typeof setTimeout> | undefined
@@ -280,6 +392,7 @@ function saveReading() {
     return save(article.id, 'article', { progress: readProgress.value })
 }
 function onScroll() {
+  if (!restoring.value) currentPage.value.scroll = window.scrollY
   if (!currentArticle.value || !ready.value || restoring.value) return
   const max = document.documentElement.scrollHeight - innerHeight
   readProgress.value = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 1
@@ -290,7 +403,19 @@ function onScroll() {
 }
 async function activateRoute() {
   const token = ++activation
-  revealed.value = false
+  const page = currentPage.value
+  const view = page.view
+  if (view) {
+    query.value = view.query as string
+    noteFilters.value = view.noteFilters as ReturnType<typeof emptyNoteFilters>
+    searchFilters.value = view.searchFilters as ReturnType<typeof emptyNoteFilters>
+    noteView.value = view.noteView as string
+    searchScope.value = view.searchScope as 'article' | 'question'
+    practiceFilter.value = view.practiceFilter as string
+    reviewKind.value = view.reviewKind as 'article' | 'question'
+    reviewFilter.value = view.reviewFilter as ReviewState
+  }
+  revealed.value = page.revealed || false
   const article = currentArticle.value
   const savedProgress = article ? records.value[article.id]?.progress || 0 : 0
   restoring.value = true
@@ -298,9 +423,18 @@ async function activateRoute() {
   if (token !== activation) return
   window.scrollTo(
     0,
-    article ? savedProgress * Math.max(0, document.documentElement.scrollHeight - innerHeight) : 0,
+    page.scroll ??
+      (article
+        ? savedProgress * Math.max(0, document.documentElement.scrollHeight - innerHeight)
+        : 0),
   )
-  readProgress.value = savedProgress
+  const maxScroll = Math.max(0, document.documentElement.scrollHeight - innerHeight)
+  readProgress.value =
+    page.scroll === undefined
+      ? savedProgress
+      : maxScroll > 0
+        ? Math.min(1, window.scrollY / maxScroll)
+        : 1
   document.querySelector<HTMLElement>('main h1')?.focus({ preventScroll: true })
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
@@ -309,27 +443,24 @@ async function activateRoute() {
   )
   if (article && ready.value)
     await save(article.id, 'article', { lastViewedAt: new Date().toISOString() })
-  if (route.value === '/search')
+  if (route.value === '/search' && page.scroll === undefined)
     await nextTick(() => document.querySelector<HTMLInputElement>('#site-search')?.focus())
 }
 function onHashChange() {
-  void saveReading()
-  if (readRoute() === '/review' && route.value !== '/review') {
-    reviewFilter.value = 'active'
-    if (activePath.value === '/practice') reviewKind.value = 'question'
-    else if (activePath.value === '/') reviewKind.value = 'article'
-  }
-  if (readRoute() === '/search' && route.value !== '/search') {
-    searchScope.value = activePath.value === '/practice' ? 'question' : 'article'
-  }
-  route.value = readRoute()
+  const marker = history.state?.betterselfPage
+  if (marker && marker.id === currentPage.value.id && readRoute() === route.value) return
+  capturePage()
+  if (
+    marker &&
+    navigation.restore(marker.cursor, marker.id) &&
+    navigation.current.route === readRoute()
+  )
+    showPage()
+  else navigate(readRoute(), true)
 }
 function onVisibilityChange() {
-  if (document.visibilityState === 'hidden') void saveReading()
+  if (document.visibilityState === 'hidden') saveSession()
 }
-watch(route, () => {
-  void activateRoute()
-})
 watch(
   pageTitle,
   (title) => {
@@ -474,8 +605,9 @@ onMounted(async () => {
   }
   document.documentElement.dataset.theme = theme.value
   window.addEventListener('hashchange', onHashChange)
+  window.addEventListener('popstate', onHashChange)
   window.addEventListener('scroll', onScroll, { passive: true })
-  window.addEventListener('pagehide', saveReading)
+  window.addEventListener('pagehide', saveSession)
   window.addEventListener('keydown', keyboardShortcut)
   document.addEventListener('visibilitychange', onVisibilityChange)
   try {
@@ -484,12 +616,14 @@ onMounted(async () => {
   } catch {
     storageError.value = '当前浏览器无法保存学习记录。文章仍可阅读，请允许网站存储后重新打开。'
   }
+  writeHistory(true)
   await activateRoute()
 })
 onUnmounted(() => {
   window.removeEventListener('hashchange', onHashChange)
+  window.removeEventListener('popstate', onHashChange)
   window.removeEventListener('scroll', onScroll)
-  window.removeEventListener('pagehide', saveReading)
+  window.removeEventListener('pagehide', saveSession)
   window.removeEventListener('keydown', keyboardShortcut)
   document.removeEventListener('visibilitychange', onVisibilityChange)
   clearTimeout(scrollTimer)
@@ -505,7 +639,7 @@ onUnmounted(() => {
     @click.prevent="document.getElementById('main-content')?.focus()"
     >跳到主要内容</a
   >
-  <div class="app-shell">
+  <div class="app-shell" @click="onInternalLink">
     <aside class="sidebar">
       <a href="#/" class="brand"
         ><img :src="`${baseUrl}favicon.svg`" width="34" height="34" alt="" /><span
@@ -518,6 +652,7 @@ onUnmounted(() => {
           v-for="item in nav"
           :key="item.path"
           :href="`#${item.path}`"
+          @click.prevent="switchTab(item.path)"
           :class="{ active: activePath === item.path }"
           :aria-current="activePath === item.path ? 'page' : undefined"
           ><component :is="item.icon" :size="19" /><span>{{ item.title }}</span
@@ -553,11 +688,20 @@ onUnmounted(() => {
     </aside>
 
     <div class="workspace">
-      <header class="topbar">
+      <header class="topbar" :class="{ 'detail-header': isDetail }">
         <div class="desktop-breadcrumb">
           我的学习空间 <ChevronRight :size="13" /><span>{{ pageTitle }}</span>
         </div>
-        <a href="#/" class="mobile-brand"
+        <div v-if="isDetail" class="mobile-page-header">
+          <button class="icon-button" :aria-label="`返回${backLabel}`" @click="goBack">
+            <ArrowLeft :size="22" />
+          </button>
+          <div>
+            <span>{{ nav.find((item) => item.path === activePath)?.title }}</span
+            ><strong>{{ pageTitle }}</strong>
+          </div>
+        </div>
+        <a v-else href="#/" class="mobile-brand"
           ><img :src="`${baseUrl}favicon.svg`" alt="" width="28" height="28" />BetterSelf<span
             >.</span
           ></a
@@ -595,7 +739,13 @@ onUnmounted(() => {
         }}</span>
       </div>
 
-      <main id="main-content" class="main-content" tabindex="-1">
+      <main
+        :key="currentPage.id"
+        id="main-content"
+        class="main-content"
+        :class="{ 'detail-page': isDetail }"
+        tabindex="-1"
+      >
         <template v-if="route === '/'">
           <div class="page-heading library-heading">
             <div class="eyebrow">记录经验，需要时找得到</div>
@@ -679,7 +829,8 @@ onUnmounted(() => {
 
         <template v-else-if="currentArticle">
           <div class="detail-topline">
-            <a href="#/" class="subtle-link"><ArrowLeft :size="16" /> 返回笔记库</a
+            <button class="subtle-link page-back" @click="goBack">
+              <ArrowLeft :size="16" /> 返回{{ backLabel }}</button
             ><span class="muted small">已读 {{ Math.round(readProgress * 100) }}%</span>
           </div>
           <div class="detail-layout">
@@ -852,7 +1003,8 @@ onUnmounted(() => {
 
         <template v-else-if="currentQuestion">
           <div class="detail-topline">
-            <a href="#/practice" class="subtle-link"><ArrowLeft :size="16" /> 返回题目列表</a
+            <button class="subtle-link page-back" @click="goBack">
+              <ArrowLeft :size="16" /> 返回{{ backLabel }}</button
             ><span class="question-counter"
               >{{ String(questionIndex + 1).padStart(2, '0') }}
               <span>/ {{ String(questions.length).padStart(2, '0') }}</span></span
@@ -1084,6 +1236,11 @@ onUnmounted(() => {
         </template>
 
         <template v-else-if="route === '/settings'">
+          <div v-if="isDetail" class="detail-topline">
+            <button class="subtle-link page-back" @click="goBack">
+              <ArrowLeft :size="16" /> 返回{{ backLabel }}
+            </button>
+          </div>
           <div class="page-heading">
             <h1 tabindex="-1">设置与备份<span class="accent-period">。</span></h1>
             <p>阅读偏好和学习记录，由你掌握。</p>
@@ -1247,6 +1404,7 @@ onUnmounted(() => {
         v-for="item in nav"
         :key="item.path"
         :href="`#${item.path}`"
+        @click.prevent="switchTab(item.path)"
         :class="{ active: activePath === item.path }"
         :aria-current="activePath === item.path ? 'page' : undefined"
         ><component :is="item.icon" :size="21" /><span>{{ item.title }}</span

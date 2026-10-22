@@ -3111,3 +3111,83 @@ select:focus-visible {
     padding-bottom: calc(90px + env(safe-area-inset-bottom));
   }
 }
+
+/* Details occupy a separate navigation level inside the current tab. */
+.mobile-page-header {
+  display: none;
+}
+.page-back {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: left;
+}
+.detail-page {
+  animation: page-enter 180ms ease-out;
+}
+@keyframes page-enter {
+  from {
+    opacity: 0.6;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@media (max-width: 760px) {
+  .topbar.detail-header {
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    padding: 0 16px;
+    gap: 8px;
+  }
+  .mobile-page-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .mobile-page-header > .icon-button {
+    flex-shrink: 0;
+  }
+  .mobile-page-header > div {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+  .mobile-page-header span {
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .mobile-page-header strong {
+    font-size: 14px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .detail-header .topbar-actions {
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .detail-header .online-badge,
+  .detail-header .theme-toggle {
+    display: none;
+  }
+  .detail-page {
+    padding-top: 18px;
+  }
+  .detail-page .detail-topline {
+    margin-bottom: 16px;
+  }
+  .detail-page .detail-topline .page-back {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .detail-page {
+    animation: none;
+  }
+}
