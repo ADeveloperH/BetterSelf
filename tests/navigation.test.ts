@@ -88,4 +88,28 @@ describe('独立 Tab 与多级详情导航', () => {
     expect(restored.current.scroll).toBe(900)
     expect(restored.parent?.route).toBe('/review')
   })
+
+  it('原文是整理稿的下一层，切换 Tab 后仍恢复原文页', () => {
+    const nav = new Navigation('/')
+    nav.open('/article/handler')
+    const article = nav.current
+    nav.open('/article/handler/original')
+    const original = nav.current
+    expect(nav.parent).toBe(article)
+    nav.selectTab('/search')
+    nav.selectTab('/')
+    expect(nav.current).toBe(original)
+    nav.back()
+    expect(nav.current).toBe(article)
+  })
+
+  it('直达原文时自动补齐笔记库、整理稿和原文三级路径', () => {
+    const nav = new Navigation('/article/handler/original')
+    expect(nav.current.route).toBe('/article/handler/original')
+    expect(nav.parent?.route).toBe('/article/handler')
+    nav.back()
+    expect(nav.current.route).toBe('/article/handler')
+    nav.back()
+    expect(nav.current.route).toBe('/')
+  })
 })

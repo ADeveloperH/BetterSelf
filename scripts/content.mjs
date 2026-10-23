@@ -154,8 +154,10 @@ export async function compileContent(root) {
     }
   }
   const articleDirectory = path.join(root, 'articles')
+  const originalDirectory = path.join(root, 'originals')
   const questionDirectory = path.join(root, 'questions')
   const articles = []
+  const originals = new Map()
   const questions = []
   for (const file of (await readdir(articleDirectory))
     .filter((name) => name.endsWith('.md'))
@@ -165,6 +167,26 @@ export async function compileContent(root) {
     assert(match, `${file} 缺少 YAML 头部或正文`)
     articles.push({ ...parse(match[1]), body: match[2] })
   }
+  for (const file of (await readdir(originalDirectory))
+    .filter((name) => name.endsWith('.md'))
+    .sort()) {
+    const source = await readFile(path.join(originalDirectory, file), 'utf8')
+    const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/)
+    assert(match, `${file} 原文缺少 YAML 头部或正文`)
+    const metadata = parse(match[1])
+    assert(string(metadata.id) && string(metadata.title), `${file} 原文缺少 ID 或标题`)
+    assert(!originals.has(metadata.id), `${file} 原文 ID 重复`)
+    originals.set(metadata.id, {
+      title: metadata.title,
+      updatedAt: metadata.updatedAt,
+      body: match[2],
+    })
+  }
+  for (const id of originals.keys())
+    assert(
+      articles.some((article) => article.id === id),
+      `原文 ${id} 没有对应的整理稿`,
+    )
   for (const file of (await readdir(questionDirectory))
     .filter((name) => /\.ya?ml$/.test(name))
     .sort()) {
@@ -176,23 +198,35 @@ export async function compileContent(root) {
   const searchable = (...values) => values.flat(Infinity).join(' ').normalize('NFKC').toLowerCase()
   const result = {
     domains,
-    articles: articles.map(({ body, ...article }) => ({
-      ...article,
-      verifiedAt: article.verifiedAt ?? null,
-      ...renderMarkdown(body),
-      minutes: Math.max(1, Math.ceil(body.length / 380)),
-      searchText: searchable(
-        article.title,
-        article.summary,
-        article.tags,
-        article.topic,
-        domains.find((domain) => domain.id === article.domainId)?.title,
-        domains
-          .find((domain) => domain.id === article.domainId)
-          ?.categories.find((category) => category.id === article.categoryId)?.title,
-        body,
-      ),
-    })),
+    articles: articles.map(({ body, ...article }) => {
+      const original = originals.get(article.id)
+      return {
+        ...article,
+        verifiedAt: article.verifiedAt ?? null,
+        ...renderMarkdown(body),
+        minutes: Math.max(1, Math.ceil(body.length / 380)),
+        original: original
+          ? {
+              title: original.title,
+              updatedAt: original.updatedAt,
+              ...renderMarkdown(original.body),
+              minutes: Math.max(1, Math.ceil(original.body.length / 380)),
+            }
+          : null,
+        searchText: searchable(
+          article.title,
+          article.summary,
+          article.tags,
+          article.topic,
+          domains.find((domain) => domain.id === article.domainId)?.title,
+          domains
+            .find((domain) => domain.id === article.domainId)
+            ?.categories.find((category) => category.id === article.categoryId)?.title,
+          body,
+          original?.body,
+        ),
+      }
+    }),
     questions: questions.map((question) => ({
       ...question,
       verifiedAt: question.verifiedAt ?? null,

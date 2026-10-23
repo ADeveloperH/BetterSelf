@@ -25,8 +25,14 @@ export class Navigation {
   constructor(route: string) {
     for (const tab of tabPaths) this.tabs[tab] = this.create(tab, tab).id
     const tab = routeTab(route)
-    const page =
-      route === tab ? this.pages[this.tabs[tab]]! : this.create(route, tab, this.tabs[tab])
+    let page = this.pages[this.tabs[tab]]!
+    if (route !== tab) {
+      const original = route.match(/^(\/article\/[^/]+)\/original$/)
+      if (original) {
+        const article = this.create(original[1], tab, this.tabs[tab])
+        page = this.create(route, tab, article.id)
+      } else page = this.create(route, tab, this.tabs[tab])
+    }
     this.tabs[tab] = page.id
     this.visits = [page.id]
   }

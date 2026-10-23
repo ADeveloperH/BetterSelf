@@ -21,6 +21,17 @@ describe('内容进入网站前的校验', () => {
       (await compileContent(fileURLToPath(new URL('../content/', import.meta.url)))).contentVersion,
     ).toBe(collection.contentVersion)
   })
+  it('九篇迁移稿保留公开原文对照，示例笔记不伪造原文', () => {
+    const withOriginal = collection.articles.filter((article) => article.original)
+    expect(withOriginal).toHaveLength(9)
+    expect(csharpArticle.original).toBeNull()
+    expect(
+      withOriginal.find((article) => article.id === 'vscode-emmet-html')?.original?.html,
+    ).toContain('!+回车')
+    const publishedOriginals = JSON.stringify(withOriginal.map((article) => article.original))
+    expect(publishedOriginals).not.toMatch(/WEB[0-9a-f]{20,}/i)
+    expect(publishedOriginals).not.toContain('/Users/')
+  })
   it('阻止重复 ID 造成学习记录错配', () => {
     const { articles, questions } = fixture()
     questions[1].id = questions[0].id

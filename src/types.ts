@@ -45,6 +45,13 @@ export interface Article {
   verifiedAt: string | null
   applicability: string
   sources: Source[]
+  original: {
+    title: string
+    updatedAt: string
+    html: string
+    toc: { id: string; title: string }[]
+    minutes: number
+  } | null
   searchText: string
 }
 export interface Question {

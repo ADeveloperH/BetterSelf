@@ -109,11 +109,11 @@ const nav = [
   { path: '/review', title: '我的复习', icon: BrainCircuit },
   { path: '/search', title: '搜索', icon: Search },
 ]
+const articleRoute = computed(() => route.value.match(/^\/article\/([^/]+)(\/original)?$/))
 const currentArticle = computed(() =>
-  route.value.startsWith('/article/')
-    ? articles.find((item) => item.id === route.value.slice(9))
-    : undefined,
+  articleRoute.value ? articles.find((item) => item.id === articleRoute.value![1]) : undefined,
 )
+const isOriginalView = computed(() => articleRoute.value?.[2] === '/original')
 const relatedQuestion = computed(() =>
   currentArticle.value
     ? questions.find((question) => question.articleIds.includes(currentArticle.value!.id))
@@ -139,7 +139,9 @@ const backLabel = computed(() => {
 })
 const pageTitle = computed(
   () =>
-    currentArticle.value?.title ||
+    (currentArticle.value
+      ? `${isOriginalView.value ? '原文 · ' : ''}${currentArticle.value.title}`
+      : undefined) ||
     currentQuestion.value?.title ||
     (route.value === '/settings'
       ? '设置与备份'
@@ -237,7 +239,7 @@ const cacheLabel = computed(() =>
 const validPage = computed(
   () =>
     ['/', '/practice', '/review', '/search', '/settings'].includes(route.value) ||
-    !!currentArticle.value ||
+    (!!currentArticle.value && (!isOriginalView.value || !!currentArticle.value.original)) ||
     !!currentQuestion.value,
 )
 
@@ -387,13 +389,13 @@ let scrollTimer: ReturnType<typeof setTimeout> | undefined
 let activation = 0
 function saveReading() {
   clearTimeout(scrollTimer)
-  const article = currentArticle.value
+  const article = isOriginalView.value ? undefined : currentArticle.value
   if (article && ready.value && !restoring.value)
     return save(article.id, 'article', { progress: readProgress.value })
 }
 function onScroll() {
   if (!restoring.value) currentPage.value.scroll = window.scrollY
-  if (!currentArticle.value || !ready.value || restoring.value) return
+  if (!currentArticle.value || isOriginalView.value || !ready.value || restoring.value) return
   const max = document.documentElement.scrollHeight - innerHeight
   readProgress.value = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 1
   clearTimeout(scrollTimer)
@@ -416,7 +418,7 @@ async function activateRoute() {
     reviewFilter.value = view.reviewFilter as ReviewState
   }
   revealed.value = page.revealed || false
-  const article = currentArticle.value
+  const article = isOriginalView.value ? undefined : currentArticle.value
   const savedProgress = article ? records.value[article.id]?.progress || 0 : 0
   restoring.value = true
   await nextTick()
@@ -827,7 +829,70 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <template v-else-if="currentArticle">
+        <template v-else-if="currentArticle && isOriginalView && currentArticle.original">
+          <div class="detail-topline">
+            <button class="subtle-link page-back" @click="goBack">
+              <ArrowLeft :size="16" /> 返回{{ backLabel }}
+            </button>
+            <span class="source-version-label">原始版本</span>
+          </div>
+          <div class="original-layout">
+            <article class="panel article-detail original-detail">
+              <div class="original-notice">
+                <FileText :size="20" />
+                <div>
+                  <strong>这是迁移时保留的原文</strong>
+                  <p>
+                    由有道云笔记官方 Word 导出转换，正文未经本轮整理；版式可能与有道编辑器略有不同。
+                  </p>
+                </div>
+              </div>
+              <div class="detail-heading original-heading">
+                <div class="card-eyebrow">原始标题 · {{ currentArticle.original.title }}</div>
+                <h1 tabindex="-1">{{ currentArticle.original.title }}</h1>
+                <div class="article-detail-meta">
+                  <span><Clock3 :size="14" /> {{ currentArticle.original.minutes }} 分钟</span>
+                  <span>原记录更新 {{ currentArticle.original.updatedAt }}</span>
+                </div>
+              </div>
+              <details v-if="currentArticle.original.toc.length" class="mobile-toc">
+                <summary><List :size="17" /> 原文目录</summary>
+                <button
+                  v-for="heading in currentArticle.original.toc"
+                  :key="heading.id"
+                  @click="document.getElementById(heading.id)?.scrollIntoView()"
+                >
+                  {{ heading.title }}
+                </button>
+              </details>
+              <div
+                class="prose article-prose original-prose"
+                :style="{ fontSize: `${fontSize}px` }"
+                v-html="currentArticle.original.html"
+              ></div>
+              <section class="organized-return">
+                <span class="eyebrow">整理后的阅读版本</span>
+                <h2>{{ currentArticle.title }}</h2>
+                <button class="secondary-button" @click="goBack">
+                  返回整理稿 <ArrowLeft :size="16" />
+                </button>
+              </section>
+            </article>
+            <aside v-if="currentArticle.original.toc.length" class="article-toc original-toc">
+              <span class="eyebrow">原文目录</span>
+              <button
+                v-for="(heading, index) in currentArticle.original.toc"
+                :key="heading.id"
+                @click="document.getElementById(heading.id)?.scrollIntoView()"
+              >
+                <span>{{ String(index + 1).padStart(2, '0') }}</span
+                >{{ heading.title }}
+              </button>
+            </aside>
+          </div>
+        </template>
+
+        <template v-else-if="currentArticle && !isOriginalView">
           <div class="detail-topline">
             <button class="subtle-link page-back" @click="goBack">
               <ArrowLeft :size="16" /> 返回{{ backLabel }}</button
@@ -892,6 +957,13 @@ onUnmounted(() => {
                       records[currentArticle.id]?.reviewState === 'active' ? '移出复习' : '加入复习'
                     }}
                   </button>
+                  <a
+                    v-if="currentArticle.original"
+                    :href="`#/article/${currentArticle.id}/original`"
+                    class="subtle-link"
+                  >
+                    <FileText :size="17" /> 原文对照
+                  </a>
                 </div>
               </div>
               <details class="mobile-toc">
@@ -909,6 +981,18 @@ onUnmounted(() => {
                 :style="{ fontSize: `${fontSize}px` }"
                 v-html="currentArticle.html"
               ></div>
+              <a
+                v-if="currentArticle.original"
+                :href="`#/article/${currentArticle.id}/original`"
+                class="source-compare-card"
+              >
+                <span class="source-compare-icon"><FileText :size="21" /></span>
+                <span>
+                  <strong>查看原文对照</strong>
+                  <small>{{ currentArticle.original.title }} · 未整理版本</small>
+                </span>
+                <ChevronRight :size="19" />
+              </a>
               <Sources
                 :sources="currentArticle.sources"
                 :applicability="currentArticle.applicability"
