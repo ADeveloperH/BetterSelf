@@ -27,6 +27,7 @@ import {
   List,
   HardDrive,
   Info,
+  FileText,
   ExternalLink,
   Settings,
 } from '@lucide/vue'
