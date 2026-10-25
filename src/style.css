@@ -1632,6 +1632,47 @@ svg {
   gap: 11px;
   margin: 22px 0 0 60px;
 }
+.app-info-panel {
+  padding: 26px;
+  margin-top: 18px;
+}
+.app-info-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.app-info-title h2 {
+  font-size: 15px;
+  font-weight: 550;
+  margin: 2px 0 8px;
+}
+.app-info-title p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.9;
+}
+.app-info-list {
+  margin: 22px 0 0 60px;
+}
+.app-info-list > div {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: minmax(74px, 0.4fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  border-top: 1px solid var(--border);
+}
+.app-info-list dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.app-info-list dd {
+  margin: 0;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
 .favorite-articles {
   margin-top: 23px;
 }
@@ -2851,6 +2892,30 @@ svg {
     font-size: 11px;
     gap: 7px;
     padding-inline: 12px;
+  }
+  .app-info-panel {
+    padding: 23px 19px;
+    margin-top: 14px;
+  }
+  .app-info-title {
+    gap: 12px;
+  }
+  .app-info-title .stat-icon {
+    width: 35px;
+    height: 35px;
+    border-radius: 10px;
+  }
+  .app-info-title h2 {
+    font-size: 14px;
+  }
+  .app-info-title p {
+    font-size: 11px;
+  }
+  .app-info-list {
+    margin: 18px 0 0;
+  }
+  .app-info-list > div {
+    gap: 12px;
   }
   .favorite-articles > h2 {
     font-size: 14px;

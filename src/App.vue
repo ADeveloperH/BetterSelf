@@ -26,6 +26,7 @@ import {
   ArrowLeft,
   List,
   HardDrive,
+  Info,
   ExternalLink,
   Settings,
 } from '@lucide/vue'
@@ -37,6 +38,7 @@ import { articles, questions, domains, matchesSearch } from './lib/content'
 import { emptyNoteFilters, matchesNoteFilters, noteLocation, noteTypeLabels } from './lib/notes'
 import { createLearningStore, parseBackup } from './lib/storage'
 import { usePwa } from './lib/pwa'
+import { getConnectivityStatus } from './lib/connectivity'
 import { Navigation, type TabPath } from './lib/navigation'
 import type { Backup, ContentKind, LearningRecord, Mastery, ReviewState } from './types'
 
@@ -225,16 +227,13 @@ const nextQuestion = computed(
 const questionIndex = computed(() =>
   questions.findIndex((item) => item.id === currentQuestion.value?.id),
 )
-const cacheLabel = computed(() =>
-  !online.value
-    ? '当前离线'
-    : isDev
-      ? '本地预览'
-      : registrationError.value
-        ? '浏览器阅读'
-        : offlineReady.value
-          ? '离线已就绪'
-          : '准备离线使用',
+const connectivity = computed(() =>
+  getConnectivityStatus({
+    online: online.value,
+    isDev,
+    registrationError: registrationError.value,
+    offlineReady: offlineReady.value,
+  }),
 )
 const validPage = computed(
   () =>
@@ -713,7 +712,7 @@ onUnmounted(() => {
             <Search :size="16" /><span>搜索笔记、面试题…</span><kbd>⌘ K</kbd></button
           ><span class="online-badge" :class="{ offline: !online }"
             ><WifiOff v-if="!online" :size="13" /><span v-else class="status-dot"></span
-            >{{ cacheLabel }}</span
+            >{{ connectivity.badge }}</span
           ><a href="#/settings" class="icon-button" aria-label="设置与备份"
             ><Settings :size="19" /></a
           ><button
@@ -1367,6 +1366,29 @@ onUnmounted(() => {
               hidden
               @change="chooseImport"
             />
+          </section>
+          <section class="panel app-info-panel" aria-labelledby="app-info-title">
+            <div class="app-info-title">
+              <span class="stat-icon"><Info :size="22" /></span>
+              <div>
+                <h2 id="app-info-title">应用信息</h2>
+                <p>用于确认当前版本和离线内容是否准备完成。</p>
+              </div>
+            </div>
+            <dl class="app-info-list">
+              <div>
+                <dt>当前版本</dt>
+                <dd>{{ version }}</dd>
+              </div>
+              <div>
+                <dt>网络状态</dt>
+                <dd>{{ connectivity.network }}</dd>
+              </div>
+              <div>
+                <dt>离线内容</dt>
+                <dd>{{ connectivity.cache }}</dd>
+              </div>
+            </dl>
           </section>
         </template>
 
