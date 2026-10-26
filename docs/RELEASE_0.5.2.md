@@ -11,4 +11,8 @@
 
 ## 验证
 
-- 待发布后补充自动测试、GitHub Pages 任务和手机视口检查结果。
+- 内容校验通过：21 篇文章、5 道题；Vitest 6 个测试文件、50 项测试全部通过。
+- `/BetterSelf/` 子路径正式构建、PWA Service Worker 和离线预缓存生成成功。
+- [GitHub Pages 发布任务](https://github.com/ADeveloperH/BetterSelf/actions/runs/40326294607) 的测试、构建、上传和发布全部成功。
+- 正式站点更新到 `BETTERSELF / 0.5.2` 后，帧同步文章显示完整 Editor 操作和新增官方 API 来源，两篇性能文章互链正常。
+- 390×844 视口下，性能总览 7 个配置小节正常换行；宽表格容器宽 306 px、内容宽 1805 px，可独立横向滑动。
