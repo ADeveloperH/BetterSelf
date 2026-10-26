@@ -31,6 +31,9 @@ markdown.renderer.rules.heading_open = (tokens, index, options, env, self) => {
   }
   return self.renderToken(tokens, index, options)
 }
+markdown.renderer.rules.table_open = () =>
+  '<div class="table-scroll" role="region" aria-label="可左右滑动的表格" tabindex="0"><table>\n'
+markdown.renderer.rules.table_close = () => '</table></div>\n'
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)

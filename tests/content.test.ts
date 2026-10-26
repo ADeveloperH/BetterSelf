@@ -87,11 +87,15 @@ describe('内容进入网站前的校验', () => {
     expect(() => validateContent(invalidDate.articles, invalidDate.questions)).toThrow('日期无效')
   })
   it('Markdown 转义原始 HTML，并标记外链交给应用内参考资料弹窗处理', () => {
-    const { html } = renderMarkdown('<script>alert(1)</script>\n\n[官方文档](https://example.com)')
+    const { html } = renderMarkdown(
+      '<script>alert(1)</script>\n\n[官方文档](https://example.com)\n\n| A | B |\n| - | - |\n| 1 | 2 |',
+    )
     expect(html).not.toContain('<script>')
     expect(html).toContain('rel="noreferrer"')
     expect(html).toContain('data-external-link=""')
     expect(html).not.toContain('target="_blank"')
+    expect(html).toContain('class="table-scroll"')
+    expect(html).toContain('aria-label="可左右滑动的表格"')
   })
   it('中文、C# 和全角输入能够检索，并支持多个关键字', () => {
     expect(matchesSearch(csharpArticle.searchText, '引用类型')).toBe(true)

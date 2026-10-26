@@ -1241,22 +1241,46 @@ svg {
   padding-left: 24px;
   margin: 1em 0;
 }
-.prose table {
-  display: block;
-  width: max-content;
+.prose .table-scroll {
+  width: 100%;
   max-width: 100%;
   overflow-x: auto;
-  border-collapse: collapse;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline-offset: 3px;
   margin: 1.5em 0;
+}
+.prose .table-scroll:focus-visible {
+  outline: 3px solid #9c89e9;
+}
+.prose table {
+  display: table;
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  margin: 0;
   font-size: 0.9em;
 }
 .prose th,
 .prose td {
   min-width: 8rem;
   padding: 10px 12px;
-  border: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: top;
+}
+.prose tr:last-child td {
+  border-bottom: 0;
+}
+.prose th:last-child,
+.prose td:last-child {
+  border-right: 0;
 }
 .prose th {
   background: var(--soft);
