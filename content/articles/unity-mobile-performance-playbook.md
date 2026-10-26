@@ -21,8 +21,20 @@ sources:
     title: 'Unity 2022.3：Application.targetFrameRate'
     url: 'https://docs.unity3d.com/2022.3/Documentation/ScriptReference/Application-targetFrameRate.html'
   - kind: external
+    title: 'Unity 2022.3：Quality 设置'
+    url: 'https://docs.unity3d.com/cn/2022.3/Manual/class-QualitySettings.html'
+  - kind: external
+    title: 'URP 14：Universal Render Pipeline Asset'
+    url: 'https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@14.0/manual/universalrp-asset.html'
+  - kind: external
     title: 'URP 14：Universal Renderer'
     url: 'https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@14.0/manual/urp-universal-renderer.html'
+  - kind: external
+    title: 'URP 14：Camera 组件'
+    url: 'https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@14.0/manual/camera-component-reference.html'
+  - kind: external
+    title: 'URP 14：Screen Space Ambient Occlusion'
+    url: 'https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@14.0/manual/post-processing-ssao.html'
   - kind: external
     title: 'Unity 2022.3：手动合并网格'
     url: 'https://docs.unity3d.com/2022.3/Documentation/Manual/combining-meshes.html'
@@ -72,13 +84,85 @@ sources:
 
 ## 第三步：核实真正生效的渲染配置
 
-沿着运行时 Quality → URP Asset → Renderer → Camera 检查。只改一个没有被当前平台选中的资产不会产生预期效果；只关闭预制体投影也不能说明 SSAO 或主光源阴影 Pass 已关闭。
+按 `Android Quality → URP Asset → Universal Renderer Data → Camera` 的顺序检查。每次修改前记录资产名和原值；同一项目可以有多个 Quality、URP Asset、Renderer 和 Camera，只改一个未被当前 Android 包使用的资产不会生效。
 
-在本项目的移动端画面要求下，先移除不需要的阴影/SSAO，再关闭有效档位中的后处理与 HDR，并把 Renderer 的 Intermediate Texture 设为 Auto。组合调整后用户报告打包达到 60 FPS；没有每项独立基准，因此不承诺复制某个开关就能得到相同收益。
+本次组合调整包括关闭不需要的实时阴影、SSAO、Camera 后处理和 HDR，将 Intermediate Texture 从 Always 改为 Auto；基线保留 Render Scale 1 与 MSAA 2x。调整后用户反馈 Android 新包达到 60 FPS，但没有逐项独立基准，不能把全部收益归给其中一个开关。
 
-Auto 根据 Pass 需求判断中间纹理，仍可能创建；Always 用于兼容某些未正确声明输入的 Feature。修改后用 Frame Debugger 看实际 Pass/目标纹理，并回归 UI、透明、特效及自定义 Feature，不能仅凭 Inspector 开关认定生效。[URP 14 Renderer 设置](https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@14.0/manual/urp-universal-renderer.html)
+### 先确认 Android 真正使用哪个 URP Asset
 
-其他画质档位可能保留 HDR、不同 MSAA 或 Always。应按实际支持的档位做验证，不在没有测量时强行统一全部配置。
+**Editor 操作：**
+
+1. 打开 `File > Build Settings`，确认平台为 Android。
+2. 打开 `Edit > Project Settings > Quality`。
+3. 在顶部 Quality 矩阵中查看 Android 列；`Default` 行的绿色标记表示 Android 默认进入哪个 Quality。本项目实测档位为 `Balanced`。
+4. 选中该 Quality，在下方 `Rendering > Render Pipeline Asset` 查看引用的 URP Asset。若为空，再到 `Edit > Project Settings > Graphics` 查看默认的 Scriptable Render Pipeline Asset。
+5. 点击资产引用定位并选中真正生效的 URP Asset，然后再修改其 Inspector。
+
+**配置作用：** Quality 可以给不同平台或档位指定不同的 Render Pipeline Asset；当前 Quality 的资产会覆盖 Graphics 中的默认资产。[Unity Quality 设置](https://docs.unity3d.com/cn/2022.3/Manual/class-QualitySettings.html)
+
+**潜在问题：** 游戏代码可能在启动或运行中调用 `QualitySettings.SetQualityLevel`，使打包默认值与运行时实际值不同。只检查 Graphics 或只改一个“看起来像移动端”的资产，容易得到无效对照。
+
+**验证与回退：** 测试包启动时一次性记录 `QualitySettings.names[QualitySettings.GetQualityLevel()]` 和 `GraphicsSettings.currentRenderPipeline.name`，确认资产名后移除日志。回退时恢复原 Quality/URP Asset 引用，不要只恢复资产内的某个字段。
+
+### 关闭主光源和附加光源的实时阴影
+
+**Editor 操作：** 选中有效 URP Asset，在 Inspector 展开 `Lighting`，分别取消 `Main Light > Cast Shadows` 与 `Additional Lights > Cast Shadows`。本次两个实时阴影入口都关闭；如果画面必须保留其中一种，应分别打包对照。
+
+**配置作用：** 两个开关控制 URP 是否为主方向光和附加光生成实时阴影。关闭后可移除相应阴影贴图和渲染工作；它不同于单个 `Light` 或 `Mesh Renderer` 上的 Cast Shadows 设置。URP Asset 已全局关闭时，单个对象保留投影也不会恢复该类实时阴影。[URP Asset 的 Lighting 设置](https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@14.0/manual/universalrp-asset.html#lighting)
+
+**潜在问题：** 动态物体会失去实时投影，接地感、遮挡关系和玩法提示可能变弱。烘焙光照不应被简单当成等价替代，动态物体、昼夜变化或可移动光源尤其需要单独检查。
+
+**验证与回退：** 用 Frame Debugger 检查主光/附加光 Shadow Map Pass 是否消失，并在角色脚下、车辆接触面、室内外切换处做画面对比。出现明显视觉或玩法损失时，重新勾选需要的 `Cast Shadows`；也可先保留主光阴影、降低分辨率和距离，再测试成本。
+
+### 停用 SSAO Renderer Feature
+
+**Editor 操作：** 在有效 URP Asset 的 Renderer 列表中定位当前 Camera 使用的 Universal Renderer Data，选中它；在 Inspector 的 `Renderer Features` 中找到 `Screen Space Ambient Occlusion`。为了便于回退，先取消该 Feature 标题旁的启用勾选；确认不再需要后再考虑从列表中删除。若项目有多个 Renderer，逐个核对 Camera 的 `Rendering > Renderer` 选择。
+
+**配置作用：** URP 14 的 SSAO 是 Renderer Feature，不是 Volume 中的普通后处理。它根据深度/法线计算屏幕空间环境遮蔽，会增加纹理与采样 Pass。[URP 14 SSAO](https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@14.0/manual/post-processing-ssao.html)
+
+**潜在问题：** 缝隙、墙角和物体接触处会变亮，立体层次下降。关闭 Camera 的 Post Processing 不会自动关闭 SSAO；反过来，停用 SSAO 也不会关闭 Bloom、Color Adjustments 等 Volume 效果。
+
+**验证与回退：** 在 Frame Debugger 中确认 SSAO Pass 和对应纹理不再生成，在墙角、车轮与地面等位置截图对比。需要恢复时重新启用同一个 Feature，原参数会保留；若已经删除，则需重新添加并恢复原参数，因此修改前应截图或记录配置。
+
+### 关闭 Camera 后处理
+
+**Editor 操作：** 在 Hierarchy 选中实际渲染游戏画面的 Camera，在 Inspector 展开 `Rendering`，取消 `Post Processing`。Camera Stack 或多场景含多个 Camera 时，逐个检查 Base/Overlay Camera；不要只修改当前打开场景里的预制体实例。
+
+**配置作用：** 该字段决定 Camera 是否执行 URP 后处理。关闭后，Volume 中的 Bloom、Color Adjustments、Tonemapping 等效果即使仍配置，也不会由这个 Camera 应用。[URP Camera 组件](https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@14.0/manual/camera-component-reference.html)
+
+**潜在问题：** 画面色调、曝光、辉光、暗角和基于后处理的抗锯齿可能变化；依赖 Bloom 表达奖励或提示的内容还会影响可读性。多个 Camera 叠加时，关闭错误的 Camera 可能没有效果。
+
+**验证与回退：** 用相同场景截图并在 Frame Debugger 确认后处理 Pass 是否消失，同时检查 UI、特效、亮部和颜色。若只有个别效果成本高，恢复 `Post Processing` 后在 Volume Profile 中逐项禁用并单变量测试。
+
+### 关闭 HDR
+
+**Editor 操作：** 选中有效 URP Asset，在 `Quality > HDR` 取消勾选。再选中 Base Camera，检查 `Output > HDR Rendering` 是否有独立覆盖；若 Camera 明确强制开启，改为跟随管线或关闭。Camera 输出到 Render Texture 时，HDR/格式可能由该 Render Texture 决定，也要核对目标纹理。
+
+**配置作用：** URP Asset 的 HDR 允许 Camera 使用大于 1 的亮度范围和 HDR 颜色缓冲，Bloom、Tonemapping 和高亮细节可能依赖它。关闭可减少 HDR 计算或缓冲带宽，但收益取决于设备和管线。[URP Asset 的 Quality 设置](https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@14.0/manual/universalrp-asset.html#quality)
+
+**潜在问题：** 高亮可能被截断，Bloom、曝光和 Tonemapping 的观感改变，颜色分级结果也可能不同。这里的渲染 HDR 与 Android 设备是否支持 HDR 屏幕输出不是同一个层级。
+
+**验证与回退：** 对比高亮、天空、粒子和 Bloom 场景，检查 Camera 或 Render Texture 没有重新覆盖。画质不接受时重新启用 URP Asset 的 `HDR`，并恢复 Camera 原值。
+
+### 将 Intermediate Texture 从 Always 改为 Auto
+
+**Editor 操作：** 选中当前使用的 Universal Renderer Data，在 Inspector 展开 `Compatibility`，把 `Intermediate Texture` 从 `Always` 改为 `Auto`。
+
+**配置作用：** `Auto` 根据活动 Renderer Feature 通过 `ScriptableRenderPass.ConfigureInput` 声明的输入，决定是否需要中间纹理；`Always` 强制先渲染到中间纹理。Unity 建议只在兼容未正确声明输入的 Renderer Feature 时使用 Always，并指出它在某些平台上可能有明显性能影响。[URP 14 Universal Renderer](https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@14.0/manual/urp-universal-renderer.html#compatibility)
+
+**潜在问题：** Auto 不保证永远不创建中间纹理；需要 Camera Color/Depth 的 Feature 仍会触发它。旧的自定义 Renderer Feature 若没有正确声明输入，改成 Auto 后可能出现黑屏、采样错误、透明/UI 异常或效果消失。
+
+**验证与回退：** 用 Frame Debugger 查看实际 Render Target 和 Pass，重点回归自定义 Renderer Feature、UI、透明材质、相机堆叠和特效。出现兼容问题时先恢复 `Always`，再修正 Feature 的输入声明。
+
+### 保留 Render Scale 1 与 MSAA 2x，并把它们当作独立变量
+
+**Editor 操作：** 选中有效 URP Asset，在 `Quality` 中设置 `Render Scale = 1`、`Anti Aliasing (MSAA) = 2x`。本次它们是记录下来的基线，并非本轮 60 FPS 结果的单独优化项。
+
+**配置作用：** Render Scale 缩放 3D 渲染目标，UI 保持设备原生分辨率；低于 1 可以减少像素负载，但会降低清晰度。MSAA 对几何边缘做多重采样，2x/4x/8x 质量和成本递增；Camera 的 `Output > MSAA` 以及部分移动平台限制会影响最终是否生效。[URP Asset 设置](https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@14.0/manual/universalrp-asset.html#quality)
+
+**潜在问题：** 降低 Render Scale 会让 3D 画面模糊、细线闪烁；提高 MSAA 会增加带宽和内存成本。某些不支持 StoreAndResolve 的移动设备在启用 Opaque Texture 时会忽略 MSAA，Inspector 显示 2x 不代表运行时一定执行。
+
+**验证与回退：** 单独测试 Render Scale 0.5/0.75/1 或 MSAA Disabled/2x，比较 GPU 时间、清晰度和 Frame Debugger，而不是与其他开关一起改。诊断结束后恢复记录的 1 与 2x；其他 Android Quality 也要按实际支持范围检查，不能默认全部统一。
 
 ## 第四步：把重复工作变成按需工作
 
