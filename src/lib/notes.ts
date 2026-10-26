@@ -28,3 +28,15 @@ export function noteLocation(article: Article, domains: Domain[]) {
     .filter(Boolean)
     .join(' / ')
 }
+
+export function noteStatus(article: Article) {
+  if (article.sample) return { id: 'sample', label: '示例内容' }
+  if (article.title.includes('（历史）') || article.applicability.includes('历史'))
+    return { id: 'historical', label: '历史资料' }
+  if (article.verifiedAt) return { id: 'verified', label: '已复核' }
+  return { id: 'unverified', label: '待复核' }
+}
+
+export function noteDisplayTitle(article: Article) {
+  return article.title.replace(/（历史）/g, '').trim()
+}

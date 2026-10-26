@@ -1,4 +1,4 @@
-export const tabPaths = ['/', '/practice', '/review', '/search'] as const
+export const tabPaths = ['/plan', '/', '/practice', '/search'] as const
 export type TabPath = (typeof tabPaths)[number]
 export type PageState = {
   id: number
@@ -11,7 +11,8 @@ export type PageState = {
 }
 
 export function routeTab(route: string): TabPath {
-  if (route.startsWith('/practice')) return '/practice'
+  if (route.startsWith('/plan')) return '/plan'
+  if (route.startsWith('/practice') || route === '/review') return '/practice'
   return tabPaths.includes(route as TabPath) ? (route as TabPath) : '/'
 }
 
@@ -66,10 +67,13 @@ export class Navigation {
   }
 
   selectTab(tab: TabPath) {
+    // Older saved sessions may not contain every current tab.
+    if (!this.pages[this.tabs[tab]]) this.tabs[tab] = this.create(tab, tab).id
     return this.current.tab === tab ? this.current : this.visit(this.tabs[tab])
   }
 
   openRoot(tab: TabPath) {
+    if (!this.pages[this.tabs[tab]]) this.tabs[tab] = this.create(tab, tab).id
     let page = this.pages[this.tabs[tab]]!
     while (page.parent !== undefined) page = this.pages[page.parent]!
     return this.current.id === page.id ? page : this.visit(page.id)
@@ -97,5 +101,19 @@ export class Navigation {
     this.cursor = cursor
     this.tabs[this.current.tab] = id
     return true
+  }
+
+  repairTabs() {
+    const legacyTabs = this.tabs as Record<string, number>
+    for (const page of this.pages) {
+      if ((page.tab as string) === '/review') page.tab = '/practice'
+    }
+    const legacyReview = legacyTabs['/review']
+    if (legacyReview !== undefined && this.pages[legacyReview])
+      this.tabs['/practice'] = legacyReview
+    delete legacyTabs['/review']
+    for (const tab of tabPaths) {
+      if (!this.pages[this.tabs[tab]]) this.tabs[tab] = this.create(tab, tab).id
+    }
   }
 }

@@ -22,9 +22,10 @@ const record = (id: string, timestamp: string): LearningRecord => ({
 })
 const backup = (records: LearningRecord[]): Backup => ({
   app: 'BetterSelf',
-  schemaVersion: 2,
+  schemaVersion: 3,
   exportedAt: '2026-10-22T00:00:00.000Z',
   records,
+  planRecords: [],
 })
 afterEach(async () => {
   await Promise.all(stores.splice(0).map((store) => store.close()))
@@ -90,7 +91,7 @@ describe('学习记录持久化和备份', () => {
   it('拒绝重复 ID、未来格式版本和破损 JSON', () => {
     const item = record('q-first', '2026-10-22T01:00:00.000Z')
     expect(() => parseBackup(JSON.stringify(backup([item, item])))).toThrow('重复')
-    expect(() => parseBackup(JSON.stringify({ ...backup([]), schemaVersion: 3 }))).toThrow(
+    expect(() => parseBackup(JSON.stringify({ ...backup([]), schemaVersion: 4 }))).toThrow(
       '不受支持',
     )
     expect(() => parseBackup('{broken')).toThrow('JSON')
@@ -108,7 +109,7 @@ describe('学习记录持久化和备份', () => {
         ],
       }),
     )
-    expect(result.schemaVersion).toBe(2)
+    expect(result.schemaVersion).toBe(3)
     expect(result.records[0].reviewState).toBe('active')
     expect(result.records[1]).toMatchObject({ favorite: true, progress: 0.7, reviewState: 'none' })
   })

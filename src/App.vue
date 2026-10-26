@@ -22,7 +22,6 @@ import {
   Upload,
   ChevronLeft,
   Clock3,
-  SlidersHorizontal,
   ArrowLeft,
   List,
   HardDrive,
@@ -30,25 +29,36 @@ import {
   FileText,
   ExternalLink,
   Settings,
+  Flag,
 } from '@lucide/vue'
-import ArticleCard from './components/ArticleCard.vue'
 import NoteFilters from './components/NoteFilters.vue'
 import QuestionRow from './components/QuestionRow.vue'
 import Sources from './components/Sources.vue'
+import GrowthPlan from './components/GrowthPlan.vue'
+import KnowledgeLibrary from './components/KnowledgeLibrary.vue'
 import { articles, questions, domains, matchesSearch } from './lib/content'
 import { emptyNoteFilters, matchesNoteFilters, noteLocation, noteTypeLabels } from './lib/notes'
 import { createLearningStore, parseBackup } from './lib/storage'
 import { usePwa } from './lib/pwa'
 import { getConnectivityStatus } from './lib/connectivity'
 import { Navigation, type TabPath } from './lib/navigation'
-import type { Backup, ContentKind, LearningRecord, Mastery, ReviewState } from './types'
+import { planCases, planTasks } from './lib/plan'
+import type {
+  Backup,
+  ContentKind,
+  LearningRecord,
+  Mastery,
+  ReviewState,
+  PlanKind,
+  PlanRecord,
+} from './types'
 
 const document = window.document
 const location = window.location
 const baseUrl = import.meta.env.BASE_URL
 const readRoute = () => {
   try {
-    return decodeURIComponent(location.hash.slice(1) || '/')
+    return decodeURIComponent(location.hash.slice(1) || '/plan')
   } catch {
     return '/not-found'
   }
@@ -59,6 +69,7 @@ try {
   const marker = history.state?.betterselfPage
   if (saved && Array.isArray(saved.pages) && Array.isArray(saved.visits) && marker) {
     const candidate = Object.assign(new Navigation('/'), saved)
+    candidate.repairTabs()
     if (candidate.restore(marker.cursor, marker.id) && candidate.current.route === readRoute())
       navigation = candidate
   }
@@ -69,6 +80,10 @@ history.scrollRestoration = 'manual'
 const currentPage = ref(navigation.current)
 const route = ref(currentPage.value.route)
 const records = ref<Record<string, LearningRecord>>({})
+const planRecords = ref<Record<string, PlanRecord>>({})
+const planPending = ref<Record<string, number>>({})
+const planErrors = ref<Record<string, boolean>>({})
+const planRevisions: Record<string, number> = {}
 const ready = ref(false)
 const storageError = ref('')
 const toast = ref('')
@@ -76,8 +91,7 @@ let toastTimer: ReturnType<typeof setTimeout>
 const query = ref('')
 const noteFilters = ref(emptyNoteFilters())
 const searchFilters = ref(emptyNoteFilters())
-const noteView = ref('all')
-const searchScope = ref<'article' | 'question'>('article')
+const searchScope = ref<'article' | 'question' | 'case'>('article')
 const practiceFilter = ref('all')
 const reviewKind = ref<'article' | 'question'>('article')
 const reviewFilter = ref<ReviewState>('active')
@@ -107,9 +121,9 @@ const {
 } = usePwa()
 
 const nav = [
-  { path: '/', title: '笔记库', icon: BookOpen },
-  { path: '/practice', title: '面试练习', icon: Layers },
-  { path: '/review', title: '我的复习', icon: BrainCircuit },
+  { path: '/plan', title: '计划', icon: Flag },
+  { path: '/', title: '知识', icon: BookOpen },
+  { path: '/practice', title: '训练', icon: Layers },
   { path: '/search', title: '搜索', icon: Search },
 ]
 const articleRoute = computed(() => route.value.match(/^\/article\/([^/]+)(\/original)?$/))
@@ -128,15 +142,36 @@ const currentQuestion = computed(() =>
     : undefined,
 )
 const activePath = computed(() => currentPage.value.tab)
-const isDetail = computed(() => currentPage.value.parent !== undefined)
+const isDetail = computed(() => currentPage.value.parent !== undefined && route.value !== '/review')
+function routeTitle(target: string) {
+  const domainId = target.match(/^\/library\/topic\/([^/]+)$/)?.[1]
+  const week = Number(target.match(/^\/plan\/week\/(\d+)$/)?.[1])
+  const caseId = target.match(/^\/plan\/cases\/([^/]+)$/)?.[1]
+  if (domainId) return domains.find((item) => item.id === domainId)?.title
+  if (week) return planTasks.find((item) => item.week === week)?.title
+  if (caseId) return planCases.find((item) => item.id === caseId)?.title
+  return (
+    (
+      {
+        '/plan/roadmap': '行动路线',
+        '/plan/cases': '经验案例',
+        '/library/all': '全部笔记',
+        '/library/recent': '最近更新',
+        '/library/favorites': '我的收藏',
+        '/library/unverified': '待复核',
+        '/library/history': '历史资料',
+        '/review': '待复习',
+        '/settings': '设置与备份',
+      } as Record<string, string>
+    )[target] || nav.find((item) => item.path === target)?.title
+  )
+}
 const backLabel = computed(() => {
   const parentRoute = navigation.pages[currentPage.value.parent!]?.route
   return (
     articles.find((item) => parentRoute === `/article/${item.id}`)?.title ||
     questions.find((item) => parentRoute === `/practice/${item.id}`)?.title ||
-    (parentRoute === '/settings'
-      ? '设置与备份'
-      : nav.find((item) => item.path === parentRoute)?.title) ||
+    routeTitle(parentRoute) ||
     '上一页'
   )
 })
@@ -146,9 +181,8 @@ const pageTitle = computed(
       ? `${isOriginalView.value ? '原文 · ' : ''}${currentArticle.value.title}`
       : undefined) ||
     currentQuestion.value?.title ||
-    (route.value === '/settings'
-      ? '设置与备份'
-      : nav.find((item) => item.path === route.value)?.title || '页面未找到'),
+    routeTitle(route.value) ||
+    '页面未找到',
 )
 const masteryLabels: Record<Mastery, string> = {
   unknown: '不会',
@@ -166,21 +200,10 @@ const weakQuestions = computed(() =>
 const populatedDomains = computed(() =>
   domains.filter((domain) => articles.some((article) => article.domainId === domain.id)),
 )
-function selectNoteDomain(domain = '') {
-  noteFilters.value = { ...emptyNoteFilters(), domain }
-  noteView.value = 'all'
-}
 function clearSearch() {
   query.value = ''
   searchFilters.value = emptyNoteFilters()
 }
-const visibleArticles = computed(() =>
-  articles.filter(
-    (item) =>
-      matchesNoteFilters(item, noteFilters.value) &&
-      (noteView.value !== 'favorites' || records.value[item.id]?.favorite),
-  ),
-)
 const visibleQuestions = computed(() =>
   questions.filter(
     (item) =>
@@ -202,7 +225,6 @@ const activeReviewCount = computed(
     [...articles, ...questions].filter((item) => records.value[item.id]?.reviewState === 'active')
       .length,
 )
-const favoriteArticles = computed(() => articles.filter((item) => records.value[item.id]?.favorite))
 const foundArticles = computed(() =>
   articles.filter(
     (item) =>
@@ -212,15 +234,15 @@ const foundArticles = computed(() =>
 const foundQuestions = computed(() =>
   questions.filter((item) => matchesSearch(item.searchText, query.value)),
 )
-const recentArticle = computed(
-  () =>
-    [...articles]
-      .filter((item) => records.value[item.id]?.lastViewedAt)
-      .sort((a, b) =>
-        (records.value[b.id]?.lastViewedAt || '').localeCompare(
-          records.value[a.id]?.lastViewedAt || '',
-        ),
-      )[0],
+const foundCases = computed(() =>
+  planCases.filter((item) =>
+    matchesSearch(
+      [item.title, item.description, ...item.prompts, planRecords.value[item.id]?.notes || ''].join(
+        ' ',
+      ),
+      query.value,
+    ),
+  ),
 )
 const nextQuestion = computed(
   () => questions.find((item) => records.value[item.id]?.mastery !== 'mastered') || questions[0],
@@ -238,7 +260,20 @@ const connectivity = computed(() =>
 )
 const validPage = computed(
   () =>
-    ['/', '/practice', '/review', '/search', '/settings'].includes(route.value) ||
+    [
+      '/',
+      '/plan',
+      '/plan/roadmap',
+      '/plan/cases',
+      '/practice',
+      '/review',
+      '/search',
+      '/settings',
+    ].includes(route.value) ||
+    /^\/plan\/week\/(?:[1-9]|1\d|2[0-4])$/.test(route.value) ||
+    planCases.some((item) => route.value === `/plan/cases/${item.id}`) ||
+    domains.some((item) => route.value === `/library/topic/${item.id}`) ||
+    /^\/library\/(?:all|recent|favorites|unverified|history)$/.test(route.value) ||
     (!!currentArticle.value && (!isOriginalView.value || !!currentArticle.value.original)) ||
     !!currentQuestion.value,
 )
@@ -280,6 +315,63 @@ async function favorite(id: string, kind: ContentKind) {
   const value = !records.value[id]?.favorite
   if (await save(id, kind, { favorite: value })) notify(value ? '已加入收藏' : '已取消收藏')
 }
+async function savePlan(
+  id: string,
+  kind: PlanKind,
+  patch: Partial<Pick<PlanRecord, 'status' | 'notes' | 'articleIds' | 'questionIds'>>,
+) {
+  if (!ready.value) return
+  const revision = (planRevisions[id] || 0) + 1
+  planRevisions[id] = revision
+  // Keep the latest typed text visible while earlier IndexedDB writes finish.
+  const current = planRecords.value[id] || {
+    id,
+    kind,
+    status: 'todo' as const,
+    notes: '',
+    articleIds: [],
+    questionIds: [],
+    updatedAt: '',
+  }
+  planRecords.value[id] = { ...current, ...patch, updatedAt: new Date().toISOString() }
+  planPending.value[id] = (planPending.value[id] || 0) + 1
+  const snapshot = planRecords.value[id]!
+  const task = store.updatePlan(id, kind, {
+    notes: snapshot.notes,
+    status: snapshot.status,
+    articleIds: snapshot.articleIds,
+    questionIds: snapshot.questionIds,
+  })
+  writes.add(task)
+  try {
+    const record = await task
+    if (planRevisions[id] === revision) {
+      planRecords.value[id] = record
+      delete planErrors.value[id]
+    }
+  } catch {
+    if (planRevisions[id] === revision) planErrors.value[id] = true
+  } finally {
+    planPending.value[id] = (planPending.value[id] || 1) - 1
+    writes.delete(task)
+  }
+}
+function retryPlan(id: string) {
+  const record = planRecords.value[id]
+  if (record)
+    void savePlan(id, record.kind, {
+      notes: record.notes,
+      status: record.status,
+      articleIds: record.articleIds,
+      questionIds: record.questionIds,
+    })
+}
+
+async function loadRecords() {
+  const [learning, plan] = await Promise.all([store.all(), store.allPlan()])
+  records.value = Object.fromEntries(learning.map((record) => [record.id, record]))
+  planRecords.value = Object.fromEntries(plan.map((record) => [record.id, record]))
+}
 async function setReview(id: string, kind: ContentKind, reviewState: ReviewState) {
   if (await save(id, kind, { reviewState }))
     notify(
@@ -314,7 +406,6 @@ function capturePage() {
       query: query.value,
       noteFilters: noteFilters.value,
       searchFilters: searchFilters.value,
-      noteView: noteView.value,
       searchScope: searchScope.value,
       practiceFilter: practiceFilter.value,
       reviewKind: reviewKind.value,
@@ -411,8 +502,7 @@ async function activateRoute() {
     query.value = view.query as string
     noteFilters.value = view.noteFilters as ReturnType<typeof emptyNoteFilters>
     searchFilters.value = view.searchFilters as ReturnType<typeof emptyNoteFilters>
-    noteView.value = view.noteView as string
-    searchScope.value = view.searchScope as 'article' | 'question'
+    searchScope.value = view.searchScope as 'article' | 'question' | 'case'
     practiceFilter.value = view.practiceFilter as string
     reviewKind.value = view.reviewKind as 'article' | 'question'
     reviewFilter.value = view.reviewFilter as ReviewState
@@ -513,6 +603,7 @@ async function applyUpdate() {
   if (
     readingSaved === false ||
     storageError.value ||
+    Object.keys(planErrors.value).length ||
     results.some((result) => result.status === 'rejected')
   ) {
     updating.value = false
@@ -533,9 +624,10 @@ async function exportBackup() {
     if (
       readingSaved === false ||
       storageError.value ||
+      Object.keys(planErrors.value).length ||
       results.some((result) => result.status === 'rejected')
     ) {
-      notify('有学习记录尚未保存，请先处理页面上方的提示。')
+      notify('有记录尚未保存，请先重试保存后再导出。')
       return
     }
     const backup = await store.export()
@@ -572,11 +664,16 @@ async function confirmImport() {
   if (!importPreview.value) return
   importing.value = true
   try {
+    await Promise.all([...writes])
+    if (Object.keys(planErrors.value).length) {
+      notify('请先在成长计划中重试保存，再合并备份。')
+      return
+    }
     const count = await store.import(importPreview.value)
-    records.value = Object.fromEntries((await store.all()).map((record) => [record.id, record]))
+    await loadRecords()
     importDialog.value?.close()
     importPreview.value = null
-    notify(`已合并 ${count} 条较新的学习记录。`)
+    notify(`已合并 ${count} 条较新的记录。`)
   } catch {
     notify('导入未完成，原有记录已保留，请稍后重试。')
   } finally {
@@ -613,7 +710,7 @@ onMounted(async () => {
   window.addEventListener('keydown', keyboardShortcut)
   document.addEventListener('visibilitychange', onVisibilityChange)
   try {
-    records.value = Object.fromEntries((await store.all()).map((record) => [record.id, record]))
+    await loadRecords()
     ready.value = true
   } catch {
     storageError.value = '当前浏览器无法保存学习记录。文章仍可阅读，请允许网站存储后重新打开。'
@@ -643,7 +740,7 @@ onUnmounted(() => {
   >
   <div class="app-shell" @click="onInternalLink">
     <aside class="sidebar">
-      <a href="#/" class="brand"
+      <a href="#/plan" class="brand"
         ><img :src="`${baseUrl}favicon.svg`" width="34" height="34" alt="" /><span
           >BetterSelf<span class="brand-period">.</span></span
         ></a
@@ -658,7 +755,7 @@ onUnmounted(() => {
           :class="{ active: activePath === item.path }"
           :aria-current="activePath === item.path ? 'page' : undefined"
           ><component :is="item.icon" :size="19" /><span>{{ item.title }}</span
-          ><span v-if="item.path === '/review' && activeReviewCount" class="nav-count">{{
+          ><span v-if="item.path === '/practice' && activeReviewCount" class="nav-count">{{
             activeReviewCount
           }}</span></a
         >
@@ -668,9 +765,8 @@ onUnmounted(() => {
       <a
         v-for="domain in populatedDomains"
         :key="domain.id"
-        href="#/"
+        :href="`#/library/topic/${domain.id}`"
         class="sidebar-topic"
-        @click="selectNoteDomain(domain.id)"
       >
         <span class="topic-dot"></span><span>{{ domain.title }}</span
         ><span class="sidebar-topic-count">{{
@@ -703,7 +799,7 @@ onUnmounted(() => {
             ><strong>{{ pageTitle }}</strong>
           </div>
         </div>
-        <a v-else href="#/" class="mobile-brand"
+        <a v-else href="#/plan" class="mobile-brand"
           ><img :src="`${baseUrl}favicon.svg`" alt="" width="28" height="28" />BetterSelf<span
             >.</span
           ></a
@@ -727,6 +823,12 @@ onUnmounted(() => {
       </header>
 
       <div v-if="storageError" class="notice error-notice" role="alert">{{ storageError }}</div>
+      <div v-if="Object.keys(planErrors).length" class="notice error-notice" role="alert">
+        <span>有成长计划记录尚未保存，草稿仍保留在当前页面。</span>
+        <button class="text-link" @click="Object.keys(planErrors).forEach(retryPlan)">
+          重试保存
+        </button>
+      </div>
       <div v-if="needRefresh" class="notice update-notice" role="status">
         <RefreshCw :size="17" /><span>有新的内容与功能可以使用。</span
         ><button class="text-link" :disabled="updating" @click="applyUpdate">
@@ -748,86 +850,15 @@ onUnmounted(() => {
         :class="{ 'detail-page': isDetail }"
         tabindex="-1"
       >
-        <template v-if="route === '/'">
-          <div class="page-heading library-heading">
-            <div class="eyebrow">记录经验，需要时找得到</div>
-            <h1 tabindex="-1">笔记库<span class="accent-period">。</span></h1>
-            <p>按主题查阅、收藏和积累，让知识各有位置。</p>
-            <button class="secondary-button" @click="openSearch">
-              <Search :size="16" /> 搜索笔记
-            </button>
-          </div>
-          <div class="dashboard-grid">
-            <section class="dashboard-main">
-              <div class="filter-tabs" aria-label="笔记视图">
-                <button
-                  :class="{ selected: noteView === 'all' }"
-                  :aria-pressed="noteView === 'all'"
-                  @click="noteView = 'all'"
-                >
-                  全部笔记 {{ articles.length }}
-                </button>
-                <button
-                  :class="{ selected: noteView === 'favorites' }"
-                  :aria-pressed="noteView === 'favorites'"
-                  @click="noteView = 'favorites'"
-                >
-                  我的收藏 {{ favoriteArticles.length }}
-                </button>
-              </div>
-              <NoteFilters v-model="noteFilters" />
-              <p class="muted small result-summary" role="status">
-                {{ visibleArticles.length }} 篇笔记
-              </p>
-              <ArticleCard
-                v-for="article in visibleArticles"
-                :key="article.id"
-                :article="article"
-                :record="records[article.id]"
-                @favorite="favorite($event, 'article')"
-              />
-              <div v-if="!visibleArticles.length" class="panel empty-state">
-                <BookOpen :size="30" />
-                <h2>
-                  {{ noteView === 'favorites' ? '这个范围还没有收藏' : '没有符合筛选条件的笔记' }}
-                </h2>
-                <p>可以清除筛选，或返回全部笔记继续查阅。</p>
-                <button class="secondary-button" @click="selectNoteDomain()">查看全部笔记</button>
-              </div>
-            </section>
-            <aside class="dashboard-aside">
-              <section class="panel recent-panel">
-                <div class="section-heading">
-                  <h2>最近阅读</h2>
-                  <Clock3 :size="16" class="muted" />
-                </div>
-                <template v-if="recentArticle">
-                  <a :href="`#/article/${recentArticle.id}`" class="recent-title">{{
-                    recentArticle.title
-                  }}</a>
-                  <div class="reading-track">
-                    <span
-                      :style="{ width: `${(records[recentArticle.id]?.progress || 0) * 100}%` }"
-                    ></span>
-                  </div>
-                  <span class="muted small"
-                    >已读 {{ Math.round((records[recentArticle.id]?.progress || 0) * 100) }}%</span
-                  >
-                </template>
-                <template v-else
-                  ><BookOpen :size="24" />
-                  <p>从一篇笔记开始</p>
-                  <span class="muted small">阅读后，在这里接着看。</span></template
-                >
-              </section>
-              <button v-if="!installed" class="install-card" @click="requestInstall">
-                <span class="install-icon"><Download :size="19" /></span
-                ><span><strong>把学习放到桌面</strong><small>随手打开，随时积累</small></span
-                ><ChevronRight :size="17" />
-              </button>
-            </aside>
-          </div>
-        </template>
+        <KnowledgeLibrary
+          v-if="route === '/' || route.startsWith('/library/')"
+          v-model:filters="noteFilters"
+          :route="route"
+          :records="records"
+          @favorite="favorite($event, 'article')"
+          @search="openSearch"
+          @back="goBack"
+        />
 
         <template v-else-if="currentArticle && isOriginalView && currentArticle.original">
           <div class="detail-topline">
@@ -1024,6 +1055,12 @@ onUnmounted(() => {
         </template>
 
         <template v-else-if="route === '/practice'">
+          <nav class="training-tabs" aria-label="训练内容">
+            <a href="#/practice" class="active" aria-current="page">面试练习</a>
+            <a href="#/review"
+              >待复习 <span v-if="activeReviewCount">{{ activeReviewCount }}</span></a
+            >
+          </nav>
           <div class="page-heading">
             <div class="eyebrow">从知道，到说得清楚</div>
             <h1 tabindex="-1">面试练习<span class="accent-period">。</span></h1>
@@ -1200,6 +1237,12 @@ onUnmounted(() => {
         </template>
 
         <template v-else-if="route === '/review'">
+          <nav class="training-tabs" aria-label="训练内容">
+            <a href="#/practice">面试练习</a>
+            <a href="#/review" class="active" aria-current="page"
+              >待复习 <span v-if="activeReviewCount">{{ activeReviewCount }}</span></a
+            >
+          </nav>
           <div class="page-heading">
             <div class="eyebrow">主动巩固，逐步积累</div>
             <h1 tabindex="-1">我的复习<span class="accent-period">。</span></h1>
@@ -1319,6 +1362,18 @@ onUnmounted(() => {
           </div>
         </template>
 
+        <GrowthPlan
+          v-else-if="route.startsWith('/plan')"
+          :route="route"
+          :records="planRecords"
+          :ready="ready"
+          :pending="planPending"
+          :errors="planErrors"
+          @update="savePlan"
+          @retry="retryPlan"
+          @back="goBack"
+        />
+
         <template v-else-if="route === '/settings'">
           <div v-if="isDetail" class="detail-topline">
             <button class="subtle-link page-back" @click="goBack">
@@ -1349,7 +1404,9 @@ onUnmounted(() => {
               <span class="stat-icon"><HardDrive :size="22" /></span>
               <div>
                 <h2>把积累，妥善保存</h2>
-                <p>学习记录保存在这台设备。导出备份，可以带到另一台设备继续使用。</p>
+                <p>
+                  学习记录、计划进度与案例草稿保存在这台设备。导出备份，可以带到另一台设备继续使用。
+                </p>
               </div>
             </div>
             <div class="backup-actions">
@@ -1413,6 +1470,13 @@ onUnmounted(() => {
             >
               面试题{{ query.trim() ? ` ${foundQuestions.length}` : '' }}
             </button>
+            <button
+              :class="{ selected: searchScope === 'case' }"
+              :aria-pressed="searchScope === 'case'"
+              @click="searchScope = 'case'"
+            >
+              案例{{ query.trim() ? ` ${foundCases.length}` : '' }}
+            </button>
           </div>
           <NoteFilters v-if="searchScope === 'article'" v-model="searchFilters" />
           <div class="search-box panel">
@@ -1420,9 +1484,19 @@ onUnmounted(() => {
               id="site-search"
               v-model="query"
               type="search"
-              :aria-label="searchScope === 'article' ? '搜索笔记' : '搜索面试题'"
+              :aria-label="
+                searchScope === 'article'
+                  ? '搜索笔记'
+                  : searchScope === 'question'
+                    ? '搜索面试题'
+                    : '搜索案例'
+              "
               :placeholder="
-                searchScope === 'article' ? '搜索笔记正文、标题或标签…' : '搜索面试题、答案或标签…'
+                searchScope === 'article'
+                  ? '搜索笔记正文、标题或标签…'
+                  : searchScope === 'question'
+                    ? '搜索面试题、答案或标签…'
+                    : '搜索案例标题、问题或本机草稿…'
               "
               autocomplete="off"
             /><button v-if="query" class="icon-button" aria-label="清空搜索" @click="query = ''">
@@ -1443,9 +1517,15 @@ onUnmounted(() => {
             ><p class="search-result-count">
               找到
               <strong>{{
-                searchScope === 'article' ? foundArticles.length : foundQuestions.length
+                searchScope === 'article'
+                  ? foundArticles.length
+                  : searchScope === 'question'
+                    ? foundQuestions.length
+                    : foundCases.length
               }}</strong>
-              条相关{{ searchScope === 'article' ? '笔记' : '面试题' }}
+              条相关{{
+                searchScope === 'article' ? '笔记' : searchScope === 'question' ? '面试题' : '案例'
+              }}
             </p>
             <section v-if="searchScope === 'article' && foundArticles.length">
               <div class="section-heading">
@@ -1482,8 +1562,33 @@ onUnmounted(() => {
                 />
               </div>
             </section>
+            <section v-if="searchScope === 'case' && foundCases.length">
+              <div class="section-heading">
+                <h2><Flag :size="18" /> 经验案例</h2>
+              </div>
+              <div class="panel case-search-list">
+                <a
+                  v-for="item in foundCases"
+                  :key="item.id"
+                  :href="`#/plan/cases/${item.id}`"
+                  class="search-case"
+                >
+                  <span
+                    ><strong>{{ item.title }}</strong
+                    ><small>{{ item.description }}</small></span
+                  >
+                  <ChevronRight :size="17" />
+                </a>
+              </div>
+            </section>
             <div
-              v-if="searchScope === 'article' ? !foundArticles.length : !foundQuestions.length"
+              v-if="
+                searchScope === 'article'
+                  ? !foundArticles.length
+                  : searchScope === 'question'
+                    ? !foundQuestions.length
+                    : !foundCases.length
+              "
               class="panel empty-state"
             >
               <Search :size="32" />
@@ -1506,7 +1611,7 @@ onUnmounted(() => {
         </footer>
       </main>
     </div>
-    <nav class="bottom-nav" aria-label="手机主要导航">
+    <nav v-if="!isDetail" class="bottom-nav" aria-label="手机主要导航">
       <a
         v-for="item in nav"
         :key="item.path"
@@ -1515,7 +1620,7 @@ onUnmounted(() => {
         :class="{ active: activePath === item.path }"
         :aria-current="activePath === item.path ? 'page' : undefined"
         ><component :is="item.icon" :size="21" /><span>{{ item.title }}</span
-        ><i v-if="item.path === '/review' && activeReviewCount" class="mobile-nav-dot"></i
+        ><i v-if="item.path === '/practice' && activeReviewCount" class="mobile-nav-dot"></i
       ></a>
     </nav>
   </div>
@@ -1530,7 +1635,9 @@ onUnmounted(() => {
     <h2 id="import-title">导入学习记录</h2>
     <p>
       这份备份包含
-      {{ importPreview?.records.length || 0 }} 条记录。按修改时间合并，保留每条记录较新的版本。
+      {{ importPreview?.records.length || 0 }} 条学习记录与
+      {{ importPreview?.planRecords.length || 0 }}
+      条计划／案例记录。按修改时间合并，保留每条记录较新的版本。旧版备份不影响已有计划记录。
     </p>
     <div class="dialog-actions">
       <button class="secondary-button" :disabled="importing" @click="cancelImport">取消</button

@@ -2,6 +2,36 @@ import { describe, expect, it } from 'vitest'
 import { Navigation } from '../src/lib/navigation'
 
 describe('独立 Tab 与多级详情导航', () => {
+  it('计划、路线与周任务形成真实三级页面', () => {
+    const nav = new Navigation('/plan')
+    const plan = nav.current
+    nav.open('/plan/roadmap')
+    const roadmap = nav.current
+    nav.open('/plan/week/1')
+    expect(nav.current.tab).toBe('/plan')
+    nav.back()
+    expect(nav.current).toBe(roadmap)
+    nav.back()
+    expect(nav.current).toBe(plan)
+  })
+
+  it('旧版复习 Tab 合并进训练并保留原页面', () => {
+    const nav = new Navigation('/')
+    const legacy = nav as unknown as {
+      pages: Array<{ tab: string; route: string }>
+      tabs: Record<string, number>
+      repairTabs: () => void
+      selectTab: (tab: '/practice') => { route: string }
+    }
+    const reviewPage = nav.pages.length
+    nav.pages.push({ id: reviewPage, route: '/review', tab: '/practice' })
+    legacy.pages[reviewPage]!.tab = '/review'
+    legacy.tabs['/review'] = reviewPage
+    legacy.repairTabs()
+    expect(legacy.tabs['/review']).toBeUndefined()
+    expect(legacy.pages[reviewPage]!.tab).toBe('/practice')
+    expect(legacy.selectTab('/practice').route).toBe('/review')
+  })
   it('切换 Tab 后恢复笔记详情、阅读位置和列表位置', () => {
     const nav = new Navigation('/')
     const list = nav.current
@@ -38,9 +68,10 @@ describe('独立 Tab 与多级详情导航', () => {
     nav.open('/article/another')
     nav.openRoot('/search')
     expect(nav.current).toBe(search)
-    nav.selectTab('/review')
+    nav.selectTab('/practice')
+    nav.open('/review')
     nav.open('/article/handler')
-    expect(nav.current.tab).toBe('/review')
+    expect(nav.current.tab).toBe('/practice')
     expect(nav.parent?.route).toBe('/review')
   })
 
@@ -61,11 +92,12 @@ describe('独立 Tab 与多级详情导航', () => {
 
   it('历史分支被截断后父页仍可返回，且不会跳到同位置的新历史', () => {
     const nav = new Navigation('/')
+    const root = nav.current
     nav.selectTab('/search')
     nav.open('/article/a')
     const parent = nav.current
     nav.open('/article/b')
-    nav.restore(0, 0)
+    nav.restore(0, root.id)
     nav.open('/article/c')
     nav.selectTab('/search')
     expect(nav.current.route).toBe('/article/b')
@@ -79,12 +111,13 @@ describe('独立 Tab 与多级详情导航', () => {
     expect(nav.parent?.route).toBe('/practice')
     nav.back()
     expect(nav.current.route).toBe('/practice')
-    nav.selectTab('/review')
+    nav.selectTab('/practice')
+    nav.open('/review')
     nav.open('/article/a')
     nav.current.scroll = 900
     const restored = Object.assign(new Navigation('/'), JSON.parse(JSON.stringify(nav)))
     expect(restored.restore(nav.cursor, nav.current.id)).toBe(true)
-    expect(restored.current.tab).toBe('/review')
+    expect(restored.current.tab).toBe('/practice')
     expect(restored.current.scroll).toBe(900)
     expect(restored.parent?.route).toBe('/review')
   })
@@ -111,5 +144,29 @@ describe('独立 Tab 与多级详情导航', () => {
     expect(nav.current.route).toBe('/article/handler')
     nav.back()
     expect(nav.current.route).toBe('/')
+  })
+
+  it('知识库主题打开文章后逐层返回', () => {
+    const nav = new Navigation('/')
+    const library = nav.current
+    nav.open('/library/topic/android')
+    const topic = nav.current
+    nav.open('/article/android-note')
+    expect(nav.current.tab).toBe('/')
+    nav.back()
+    expect(nav.current).toBe(topic)
+    nav.back()
+    expect(nav.current).toBe(library)
+  })
+
+  it('计划深层页面切换 Tab 后仍恢复原层级', () => {
+    const nav = new Navigation('/plan')
+    nav.open('/plan/roadmap')
+    nav.open('/plan/week/8')
+    const week = nav.current
+    nav.selectTab('/')
+    nav.selectTab('/plan')
+    expect(nav.current).toBe(week)
+    expect(nav.parent?.route).toBe('/plan/roadmap')
   })
 })

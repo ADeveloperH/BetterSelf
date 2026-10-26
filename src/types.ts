@@ -13,9 +13,21 @@ export interface LearningRecord {
 }
 export interface Backup {
   app: 'BetterSelf'
-  schemaVersion: 2
+  schemaVersion: 3
   exportedAt: string
   records: LearningRecord[]
+  planRecords: PlanRecord[]
+}
+export type PlanStatus = 'todo' | 'active' | 'completed'
+export type PlanKind = 'task' | 'case'
+export interface PlanRecord {
+  id: string
+  kind: PlanKind
+  status: PlanStatus
+  notes: string
+  articleIds: string[]
+  questionIds: string[]
+  updatedAt: string
 }
 export interface Source {
   title: string
