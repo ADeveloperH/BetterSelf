@@ -16,6 +16,8 @@ sources: [{"kind": "personal", "title": "有道云笔记历史记录"}, {"kind":
 
 > 2020 年历史摘记，未注明 MMKV 版本。2026-10-22 修正明显代码笔误与部分锁语义；只有首个线程示例经过本机编译运行，其余 8 段仍是历史片段（含故意不安全 / 死锁反例），不等同于可复用队列或锁库。
 
+MMKV 的 mmap、Protobuf、追加写入与文件重整已整理为独立入口：[MMKV 存储机制：mmap、Protobuf 与追加写入](#/article/mmkv-storage-mechanics)。本文继续保留锁与多进程历史实现，不重复展开基础存储路径。
+
 ## pthread 线程与同步基础
 
 mmkv native 层已经处理了多线程调用的问题

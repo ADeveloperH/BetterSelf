@@ -175,10 +175,19 @@ export async function compileContent(root) {
     assert(match, `${file} 原文缺少 YAML 头部或正文`)
     const metadata = parse(match[1])
     assert(string(metadata.id) && string(metadata.title), `${file} 原文缺少 ID 或标题`)
+    assert(
+      [undefined, 'word-export', 'mcp-text'].includes(metadata.captureMethod),
+      `${file} 原文采集方式无效`,
+    )
+    assert(
+      metadata.updatedAt === null || metadata.updatedAt === undefined || string(metadata.updatedAt),
+      `${file} 原文日期无效`,
+    )
     assert(!originals.has(metadata.id), `${file} 原文 ID 重复`)
     originals.set(metadata.id, {
       title: metadata.title,
-      updatedAt: metadata.updatedAt,
+      updatedAt: metadata.updatedAt ?? null,
+      captureMethod: metadata.captureMethod ?? 'word-export',
       body: match[2],
     })
   }
@@ -209,6 +218,7 @@ export async function compileContent(root) {
           ? {
               title: original.title,
               updatedAt: original.updatedAt,
+              captureMethod: original.captureMethod,
               ...renderMarkdown(original.body),
               minutes: Math.max(1, Math.ceil(original.body.length / 380)),
             }

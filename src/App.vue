@@ -873,7 +873,11 @@ onUnmounted(() => {
                 <FileText :size="20" />
                 <div>
                   <strong>这是迁移时保留的原文</strong>
-                  <p>
+                  <p v-if="currentArticle.original.captureMethod === 'mcp-text'">
+                    由有道云笔记官方 MCP
+                    读取纯文本正文；原版富文本样式和接口未返回的附件无法在此恢复。
+                  </p>
+                  <p v-else>
                     由有道云笔记官方 Word 导出转换，正文未经本轮整理；版式可能与有道编辑器略有不同。
                   </p>
                 </div>
@@ -883,7 +887,10 @@ onUnmounted(() => {
                 <h1 tabindex="-1">{{ currentArticle.original.title }}</h1>
                 <div class="article-detail-meta">
                   <span><Clock3 :size="14" /> {{ currentArticle.original.minutes }} 分钟</span>
-                  <span>原记录更新 {{ currentArticle.original.updatedAt }}</span>
+                  <span v-if="currentArticle.original.updatedAt"
+                    >原记录更新 {{ currentArticle.original.updatedAt }}</span
+                  >
+                  <span v-else>原记录日期未提供</span>
                 </div>
               </div>
               <details v-if="currentArticle.original.toc.length" class="mobile-toc">

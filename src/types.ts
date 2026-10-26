@@ -59,7 +59,8 @@ export interface Article {
   sources: Source[]
   original: {
     title: string
-    updatedAt: string
+    updatedAt: string | null
+    captureMethod: 'word-export' | 'mcp-text'
     html: string
     toc: { id: string; title: string }[]
     minutes: number
