@@ -3046,10 +3046,6 @@ svg {
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
-  .external-reference-actions .primary-button {
-    grid-column: 1 / -1;
-    grid-row: 1;
-  }
   .external-reference-actions > * {
     justify-content: center;
     font-size: 11px;

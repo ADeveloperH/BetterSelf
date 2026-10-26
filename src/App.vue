@@ -1708,18 +1708,9 @@ onUnmounted(() => {
     <strong class="external-reference-name">{{ externalReference?.title }}</strong>
     <span class="external-reference-host">{{ externalReference?.host }}</span>
     <p class="external-reference-url">{{ externalReference?.url }}</p>
-    <p>复制链接后可在浏览器中查看；关闭这里会留在当前笔记。</p>
+    <p>为避免在站外页面无法返回，这里不会直接打开网页。复制链接后可在浏览器中查看。</p>
     <div class="dialog-actions external-reference-actions">
       <button class="secondary-button" @click="externalDialog?.close()">返回笔记</button>
-      <a
-        v-if="externalReference"
-        class="secondary-button"
-        :href="externalReference.url"
-        target="_blank"
-        rel="noopener noreferrer"
-        @click="externalDialog?.close()"
-        >离开应用打开</a
-      >
       <button class="primary-button" @click="copyExternalReference">
         <Check v-if="externalCopied" :size="16" />
         <Copy v-else :size="16" />
