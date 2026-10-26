@@ -1876,6 +1876,39 @@ svg {
   gap: 12px;
   margin-top: 26px;
 }
+.external-reference-name,
+.external-reference-host {
+  display: block;
+}
+.external-reference-name {
+  font-size: 15px;
+  line-height: 1.7;
+}
+.external-reference-host {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.app-dialog .external-reference-url {
+  max-height: 84px;
+  overflow: auto;
+  padding: 11px 12px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  background: var(--soft);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  user-select: all;
+}
+.external-reference-actions {
+  flex-wrap: wrap;
+}
+.external-reference-actions > * {
+  min-height: 44px;
+}
 :root[data-theme='dark'] .article-card-cover {
   background: #302c41;
 }
@@ -3008,6 +3041,18 @@ svg {
   }
   .dialog-actions > button {
     font-size: 12px;
+  }
+  .external-reference-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .external-reference-actions .primary-button {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .external-reference-actions > * {
+    justify-content: center;
+    font-size: 11px;
   }
 }
 @media (max-width: 370px) {

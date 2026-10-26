@@ -17,6 +17,7 @@ const linkRenderer = markdown.renderer.rules.link_open
 markdown.renderer.rules.link_open = (tokens, index, options, env, self) => {
   if (/^https?:/.test(tokens[index].attrGet('href') || '')) {
     tokens[index].attrSet('rel', 'noreferrer')
+    tokens[index].attrSet('data-external-link', '')
   }
   return linkRenderer
     ? linkRenderer(tokens, index, options, env, self)

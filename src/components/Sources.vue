@@ -12,7 +12,7 @@ defineProps<{ sources: Source[]; applicability: string; verifiedAt: string | nul
       <span v-if="source.kind === 'personal'" class="source-personal"
         >{{ source.title }} · 个人记录</span
       >
-      <a v-else :href="source.url" rel="noreferrer"
+      <a v-else :href="source.url" rel="noreferrer" data-external-link
         >{{ source.title }} <ExternalLink :size="13"
       /></a>
     </template>

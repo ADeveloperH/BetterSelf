@@ -28,6 +28,7 @@ import {
   Info,
   FileText,
   ExternalLink,
+  Copy,
   Settings,
   Flag,
 } from '@lucide/vue'
@@ -105,6 +106,9 @@ const writes = new Set<Promise<unknown>>()
 const fileInput = ref<HTMLInputElement>()
 const importDialog = ref<HTMLDialogElement>()
 const installDialog = ref<HTMLDialogElement>()
+const externalDialog = ref<HTMLDialogElement>()
+const externalReference = ref<{ title: string; url: string; host: string } | null>(null)
+const externalCopied = ref(false)
 const importPreview = ref<Backup | null>(null)
 const importing = ref(false)
 const updating = ref(false)
@@ -451,24 +455,55 @@ function goBack() {
   writeHistory()
   showPage()
 }
-function onInternalLink(event: MouseEvent) {
-  if (
-    event.defaultPrevented ||
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.shiftKey ||
-    event.altKey
-  )
-    return
-  const anchor = (event.target as Element).closest<HTMLAnchorElement>('a[href]')
+function onLinkClick(event: MouseEvent) {
+  if (event.defaultPrevented || event.button !== 0 || !(event.target instanceof Element)) return
+  const anchor = event.target.closest<HTMLAnchorElement>('a[href]')
   const href = anchor?.getAttribute('href')
+  if (anchor && href && (/^https?:\/\//i.test(href) || anchor.hasAttribute('data-external-link'))) {
+    event.preventDefault()
+    try {
+      const url = new URL(anchor.href)
+      externalReference.value = {
+        title: anchor.textContent?.trim() || url.hostname,
+        url: url.href,
+        host: url.hostname.replace(/^www\./, ''),
+      }
+      externalCopied.value = false
+      void nextTick(() => externalDialog.value?.showModal())
+    } catch {
+      notify('这个参考链接暂时无法打开。')
+    }
+    return
+  }
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
   if (!href?.startsWith('#/') || anchor?.target || anchor?.hasAttribute('download')) return
   event.preventDefault()
   try {
     navigate(decodeURIComponent(href.slice(1)))
   } catch {
     navigate('/not-found')
+  }
+}
+async function copyExternalReference() {
+  if (!externalReference.value) return
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(externalReference.value.url)
+    } else {
+      const input = document.createElement('textarea')
+      input.value = externalReference.value.url
+      input.style.position = 'fixed'
+      input.style.opacity = '0'
+      document.body.append(input)
+      input.select()
+      const copied = document.execCommand('copy')
+      input.remove()
+      if (!copied) throw new Error('copy failed')
+    }
+    externalCopied.value = true
+    notify('参考链接已复制。')
+  } catch {
+    notify('复制失败，请长按链接地址复制。')
   }
 }
 function saveSession() {
@@ -738,7 +773,7 @@ onUnmounted(() => {
     @click.prevent="document.getElementById('main-content')?.focus()"
     >跳到主要内容</a
   >
-  <div class="app-shell" @click="onInternalLink">
+  <div class="app-shell" @click="onLinkClick">
     <aside class="sidebar">
       <a href="#/plan" class="brand"
         ><img :src="`${baseUrl}favicon.svg`" width="34" height="34" alt="" /><span
@@ -1660,6 +1695,36 @@ onUnmounted(() => {
     <p>离线内容准备完成后，可以在没有网络时继续阅读和练习。</p>
     <div class="dialog-actions">
       <button class="primary-button" @click="installDialog?.close()">知道了</button>
+    </div>
+  </dialog>
+  <dialog
+    ref="externalDialog"
+    class="app-dialog external-reference-dialog"
+    aria-labelledby="external-reference-title"
+    @close="externalReference = null"
+  >
+    <div class="dialog-icon"><ExternalLink :size="25" /></div>
+    <h2 id="external-reference-title">参考资料</h2>
+    <strong class="external-reference-name">{{ externalReference?.title }}</strong>
+    <span class="external-reference-host">{{ externalReference?.host }}</span>
+    <p class="external-reference-url">{{ externalReference?.url }}</p>
+    <p>复制链接后可在浏览器中查看；关闭这里会留在当前笔记。</p>
+    <div class="dialog-actions external-reference-actions">
+      <button class="secondary-button" @click="externalDialog?.close()">返回笔记</button>
+      <a
+        v-if="externalReference"
+        class="secondary-button"
+        :href="externalReference.url"
+        target="_blank"
+        rel="noopener noreferrer"
+        @click="externalDialog?.close()"
+        >离开应用打开</a
+      >
+      <button class="primary-button" @click="copyExternalReference">
+        <Check v-if="externalCopied" :size="16" />
+        <Copy v-else :size="16" />
+        {{ externalCopied ? '已复制' : '复制链接' }}
+      </button>
     </div>
   </dialog>
 </template>
