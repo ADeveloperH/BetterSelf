@@ -32,6 +32,18 @@ describe('独立 Tab 与多级详情导航', () => {
     expect(legacy.pages[reviewPage]!.tab).toBe('/practice')
     expect(legacy.selectTab('/practice').route).toBe('/review')
   })
+
+  it('旧缓存把新主入口当详情时会修复为独立 Tab 根页', () => {
+    const nav = new Navigation('/')
+    nav.open('/legacy-invalid')
+    nav.current.route = '/plan'
+    expect(nav.current.tab).toBe('/')
+    expect(nav.current.parent).toBeDefined()
+    nav.repairTabs()
+    expect(nav.current.tab).toBe('/plan')
+    expect(nav.current.parent).toBeUndefined()
+    expect(nav.tabs['/plan']).toBe(nav.current.id)
+  })
   it('切换 Tab 后恢复笔记详情、阅读位置和列表位置', () => {
     const nav = new Navigation('/')
     const list = nav.current

@@ -107,13 +107,25 @@ export class Navigation {
     const legacyTabs = this.tabs as Record<string, number>
     for (const page of this.pages) {
       if ((page.tab as string) === '/review') page.tab = '/practice'
+      if (tabPaths.includes(page.route as TabPath)) {
+        page.tab = page.route as TabPath
+        page.parent = undefined
+      }
     }
     const legacyReview = legacyTabs['/review']
     if (legacyReview !== undefined && this.pages[legacyReview])
       this.tabs['/practice'] = legacyReview
     delete legacyTabs['/review']
     for (const tab of tabPaths) {
-      if (!this.pages[this.tabs[tab]]) this.tabs[tab] = this.create(tab, tab).id
+      if (tab === '/practice' && legacyReview !== undefined && this.pages[legacyReview]) continue
+      const current = this.current
+      const root =
+        current.route === tab
+          ? current
+          : [...this.pages]
+              .reverse()
+              .find((page) => page.route === tab && page.parent === undefined)
+      this.tabs[tab] = root?.id ?? this.create(tab, tab).id
     }
   }
 }
