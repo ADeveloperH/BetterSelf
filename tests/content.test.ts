@@ -14,17 +14,20 @@ const fixture = () => ({
 
 describe('内容进入网站前的校验', () => {
   it('实际示例可以构建，并保留稳定的内容指纹', async () => {
-    expect(collection.articles).toHaveLength(13)
+    expect(collection.articles).toHaveLength(18)
     expect(collection.questions).toHaveLength(5)
     expect(collection.articles.every((article) => article.toc.length > 0)).toBe(true)
     expect(
       (await compileContent(fileURLToPath(new URL('../content/', import.meta.url)))).contentVersion,
     ).toBe(collection.contentVersion)
   })
-  it('十二篇迁移稿保留公开原文对照，并标明实际采集方式', () => {
+  it('十六篇迁移稿保留公开原文对照，并标明实际采集方式', () => {
     const withOriginal = collection.articles.filter((article) => article.original)
-    expect(withOriginal).toHaveLength(12)
+    expect(withOriginal).toHaveLength(16)
     expect(csharpArticle.original).toBeNull()
+    expect(
+      collection.articles.find((article) => article.id === 'unity-jenkins-macos-build')?.original,
+    ).toBeNull()
     expect(
       withOriginal.find((article) => article.id === 'vscode-emmet-html')?.original?.html,
     ).toContain('!+回车')
@@ -42,6 +45,14 @@ describe('内容进入网站前的校验', () => {
       withOriginal.find((article) => article.id === 'unity-addressables-remote-content')?.original
         ?.html,
     ).toContain('已隐去本机项目绝对路径')
+    expect(
+      withOriginal.find((article) => article.id === 'unity-android-proguard-dictionary')?.original
+        ?.html,
+    ).toContain('已隐去本机用户名、项目名和绝对路径')
+    expect(
+      withOriginal.find((article) => article.id === 'unity-external-dependency-manager')?.original
+        ?.html,
+    ).toContain('内部仓库、项目与插件配置')
   })
   it('阻止重复 ID 造成学习记录错配', () => {
     const { articles, questions } = fixture()
