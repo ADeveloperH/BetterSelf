@@ -32,6 +32,15 @@ export interface PlanView {
   caseId: string
 }
 
+export interface PlanCase {
+  id: string
+  title: string
+  description: string
+  prompts: string[]
+  articleIds?: string[]
+  projectId?: string
+}
+
 export const defaultPlanView = (): PlanView => ({
   section: 'route',
   week: 0,
@@ -213,7 +222,7 @@ export const planTasks: PlanTask[] = taskContent.map((task, index) => ({
   phase: Math.floor(index / 4),
 }))
 
-export const planCases = [
+export const planCases: PlanCase[] = [
   {
     id: 'unity-case-gameplay',
     title: '玩法与关卡工具',
@@ -242,6 +251,12 @@ export const planCases = [
       '设备、构建方式和操作步骤是否一致？',
       '什么证据支持根因，排除了什么解释？',
       '修改有什么结果，怎样做回归？',
+    ],
+    projectId: 'unity-mobile-game-performance',
+    articleIds: [
+      'unity-mobile-performance-playbook',
+      'unity-android-frame-pacing-case',
+      'unity-pooling-lifecycle-regression',
     ],
   },
   {

@@ -40,7 +40,7 @@ function string(value) {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-export function validateContent(articles, questions, domains = []) {
+export function validateContent(articles, questions, domains = [], projects = []) {
   assert(Array.isArray(articles) && Array.isArray(questions), '内容必须为数组')
   const ids = new Set()
   for (const [kind, items] of [
@@ -126,6 +126,32 @@ export function validateContent(articles, questions, domains = []) {
     for (const id of question.articleIds)
       assert(articleIds.has(id), `题目 ${question.id} 关联的文章 ${id} 不存在`)
   }
+  const projectIds = new Set()
+  for (const project of projects) {
+    const label = `项目实践 ${project?.id || '（缺少 ID）'}`
+    assert(project && typeof project === 'object', '项目实践内容无效')
+    assert(string(project.id) && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(project.id), `${label} ID 无效`)
+    assert(!projectIds.has(project.id), `${label} ID 重复`)
+    projectIds.add(project.id)
+    for (const field of ['title', 'summary', 'domainId'])
+      assert(string(project[field]), `${label} 缺少 ${field}`)
+    assert(
+      domains.some((domain) => domain.id === project.domainId),
+      `${label} 主题不存在`,
+    )
+    assert(
+      Array.isArray(project.articleIds) &&
+        project.articleIds.length > 0 &&
+        project.articleIds.every(string) &&
+        new Set(project.articleIds).size === project.articleIds.length,
+      `${label} 文章关联无效`,
+    )
+    for (const id of project.articleIds) {
+      const article = articles.find((item) => item.id === id)
+      assert(article, `${label} 关联的文章 ${id} 不存在`)
+      assert(article.domainId === project.domainId, `${label} 关联文章 ${id} 的主题不一致`)
+    }
+  }
 }
 
 export function renderMarkdown(text) {
@@ -135,6 +161,7 @@ export function renderMarkdown(text) {
 
 export async function compileContent(root) {
   const domains = parse(await readFile(path.join(root, 'taxonomy.yaml'), 'utf8'))
+  const projects = parse(await readFile(path.join(root, 'projects.yaml'), 'utf8'))
   assert(Array.isArray(domains) && domains.length > 0, '缺少主题分类')
   const domainIds = new Set()
   for (const domain of domains) {
@@ -203,10 +230,12 @@ export async function compileContent(root) {
     assert(Array.isArray(parsed), `${file} 必须包含题目数组`)
     questions.push(...parsed)
   }
-  validateContent(articles, questions, domains)
+  assert(Array.isArray(projects), '项目实践必须为数组')
+  validateContent(articles, questions, domains, projects)
   const searchable = (...values) => values.flat(Infinity).join(' ').normalize('NFKC').toLowerCase()
   const result = {
     domains,
+    projects,
     articles: articles.map(({ body, ...article }) => {
       const original = originals.get(article.id)
       return {

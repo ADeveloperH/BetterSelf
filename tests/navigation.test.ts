@@ -171,6 +171,22 @@ describe('独立 Tab 与多级详情导航', () => {
     expect(nav.current).toBe(library)
   })
 
+  it('项目实践合集与文章保持独立多级页面', () => {
+    const nav = new Navigation('/')
+    nav.open('/library/projects')
+    const projects = nav.current
+    nav.open('/library/project/unity-mobile-game-performance')
+    const project = nav.current
+    nav.open('/article/unity-mobile-performance-playbook')
+    expect(nav.current.tab).toBe('/')
+    nav.back()
+    expect(nav.current).toBe(project)
+    nav.back()
+    expect(nav.current).toBe(projects)
+    nav.back()
+    expect(nav.current.route).toBe('/')
+  })
+
   it('计划深层页面切换 Tab 后仍恢复原层级', () => {
     const nav = new Navigation('/plan')
     nav.open('/plan/roadmap')

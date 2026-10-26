@@ -1,0 +1,8 @@
+- id: unity-mobile-game-performance
+  title: Unity 休闲游戏性能优化
+  summary: 围绕真机帧率、对象复用和回归验证整理的一组项目实践。
+  domainId: unity
+  articleIds:
+    - unity-mobile-performance-playbook
+    - unity-android-frame-pacing-case
+    - unity-pooling-lifecycle-regression

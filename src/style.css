@@ -3523,6 +3523,51 @@ select:focus-visible {
   font-size: 12px;
   font-weight: 500;
 }
+.project-collection-list {
+  display: grid;
+  gap: 12px;
+  max-width: 860px;
+}
+.project-collection-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 18px;
+}
+.project-collection-card > span {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: var(--purple);
+  background: var(--tint);
+  border-radius: 8px;
+}
+.project-collection-card h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.project-collection-card p {
+  margin: 5px 0 7px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.project-collection-card small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.project-privacy-note {
+  max-width: 860px;
+  margin: 0 0 18px;
+  padding: 13px 15px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+  background: var(--soft);
+  border-left: 3px solid var(--purple);
+}
 .knowledge-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px 36px;

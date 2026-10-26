@@ -39,6 +39,13 @@ export interface Domain {
   title: string
   categories: { id: string; title: string }[]
 }
+export interface ProjectCollection {
+  id: string
+  title: string
+  summary: string
+  domainId: string
+  articleIds: string[]
+}
 export type NoteType = 'concept' | 'guide' | 'troubleshooting' | 'retrospective' | 'resources'
 export interface Article {
   id: string

@@ -37,7 +37,7 @@ import QuestionRow from './components/QuestionRow.vue'
 import Sources from './components/Sources.vue'
 import GrowthPlan from './components/GrowthPlan.vue'
 import KnowledgeLibrary from './components/KnowledgeLibrary.vue'
-import { articles, questions, domains, matchesSearch } from './lib/content'
+import { articles, questions, domains, projects, matchesSearch } from './lib/content'
 import { emptyNoteFilters, matchesNoteFilters, noteLocation, noteTypeLabels } from './lib/notes'
 import { createLearningStore, parseBackup } from './lib/storage'
 import { usePwa } from './lib/pwa'
@@ -149,9 +149,11 @@ const activePath = computed(() => currentPage.value.tab)
 const isDetail = computed(() => currentPage.value.parent !== undefined && route.value !== '/review')
 function routeTitle(target: string) {
   const domainId = target.match(/^\/library\/topic\/([^/]+)$/)?.[1]
+  const projectId = target.match(/^\/library\/project\/([^/]+)$/)?.[1]
   const week = Number(target.match(/^\/plan\/week\/(\d+)$/)?.[1])
   const caseId = target.match(/^\/plan\/cases\/([^/]+)$/)?.[1]
   if (domainId) return domains.find((item) => item.id === domainId)?.title
+  if (projectId) return projects.find((item) => item.id === projectId)?.title
   if (week) return planTasks.find((item) => item.week === week)?.title
   if (caseId) return planCases.find((item) => item.id === caseId)?.title
   return (
@@ -164,6 +166,7 @@ function routeTitle(target: string) {
         '/library/favorites': '我的收藏',
         '/library/unverified': '待复核',
         '/library/history': '历史资料',
+        '/library/projects': '项目实践',
         '/review': '待复习',
         '/settings': '设置与备份',
       } as Record<string, string>
@@ -277,6 +280,8 @@ const validPage = computed(
     /^\/plan\/week\/(?:[1-9]|1\d|2[0-4])$/.test(route.value) ||
     planCases.some((item) => route.value === `/plan/cases/${item.id}`) ||
     domains.some((item) => route.value === `/library/topic/${item.id}`) ||
+    projects.some((item) => route.value === `/library/project/${item.id}`) ||
+    route.value === '/library/projects' ||
     /^\/library\/(?:all|recent|favorites|unverified|history)$/.test(route.value) ||
     (!!currentArticle.value && (!isOriginalView.value || !!currentArticle.value.original)) ||
     !!currentQuestion.value,

@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Bookmark,
   BookOpen,
+  BriefcaseBusiness,
   CheckCircle2,
   Clock3,
   FileClock,
@@ -14,7 +15,7 @@ import {
 } from '@lucide/vue'
 import ArticleListItem from './ArticleListItem.vue'
 import NoteFilters from './NoteFilters.vue'
-import { articles, domains } from '../lib/content'
+import { articles, domains, projects } from '../lib/content'
 import {
   emptyNoteFilters,
   matchesNoteFilters,
@@ -44,6 +45,11 @@ const recentArticle = computed(
 )
 const domainId = computed(() => props.route.match(/^\/library\/topic\/([^/]+)$/)?.[1] || '')
 const currentDomain = computed(() => domains.find((domain) => domain.id === domainId.value))
+const projectId = computed(() => props.route.match(/^\/library\/project\/([^/]+)$/)?.[1] || '')
+const currentProject = computed(() => projects.find((project) => project.id === projectId.value))
+const projectArticles = computed(() =>
+  articles.filter((article) => currentProject.value?.articleIds.includes(article.id)),
+)
 const collection = computed(
   () => props.route.match(/^\/library\/(all|favorites|history|unverified|recent)$/)?.[1],
 )
@@ -150,6 +156,11 @@ function resetFilters() {
         <h2 id="collection-heading"><Bookmark :size="18" /> 常用集合</h2>
       </div>
       <div class="collection-list panel">
+        <a href="#/library/projects"
+          ><BriefcaseBusiness :size="18" /><span>项目实践</span
+          ><strong>{{ projects.length }}</strong
+          ><ArrowRight :size="16"
+        /></a>
         <a href="#/library/recent"
           ><Clock3 :size="18" /><span>最近更新</span><strong>{{ articles.length }}</strong
           ><ArrowRight :size="16"
@@ -184,6 +195,61 @@ function resetFilters() {
         />
       </div>
     </section>
+  </template>
+
+  <template v-else-if="route === '/library/projects'">
+    <div class="detail-topline">
+      <button class="subtle-link page-back" @click="$emit('back')">
+        <ArrowLeft :size="16" /> 返回知识库
+      </button>
+    </div>
+    <div class="page-heading compact-heading">
+      <div class="eyebrow">跨项目复用经验</div>
+      <h1 tabindex="-1">项目实践<span class="accent-period">。</span></h1>
+      <p>将同一次实践里的方法、案例与回归记录组合阅读。</p>
+    </div>
+    <div class="project-collection-list">
+      <a
+        v-for="project in projects"
+        :key="project.id"
+        :href="`#/library/project/${project.id}`"
+        class="panel project-collection-card"
+      >
+        <span><BriefcaseBusiness :size="20" /></span>
+        <div>
+          <h2>{{ project.title }}</h2>
+          <p>{{ project.summary }}</p>
+          <small>{{ project.articleIds.length }} 篇相关笔记</small>
+        </div>
+        <ArrowRight :size="17" />
+      </a>
+    </div>
+  </template>
+
+  <template v-else-if="currentProject">
+    <div class="detail-topline">
+      <button class="subtle-link page-back" @click="$emit('back')">
+        <ArrowLeft :size="16" /> 返回项目实践
+      </button>
+    </div>
+    <div class="page-heading compact-heading">
+      <div class="eyebrow">已脱敏的项目实践</div>
+      <h1 tabindex="-1">{{ currentProject.title }}<span class="accent-period">。</span></h1>
+      <p>{{ currentProject.summary }}</p>
+    </div>
+    <div class="project-privacy-note">
+      这里只聚合可公开复用的结论。项目身份、内部路径、提交和原始证据保留在私有档案。
+    </div>
+    <p class="muted small result-summary" role="status">{{ projectArticles.length }} 篇相关笔记</p>
+    <div class="knowledge-list panel">
+      <ArticleListItem
+        v-for="article in projectArticles"
+        :key="article.id"
+        :article="article"
+        :record="records[article.id]"
+        @favorite="$emit('favorite', $event)"
+      />
+    </div>
   </template>
 
   <template v-else-if="currentDomain">

@@ -14,8 +14,9 @@ const fixture = () => ({
 
 describe('内容进入网站前的校验', () => {
   it('实际示例可以构建，并保留稳定的内容指纹', async () => {
-    expect(collection.articles).toHaveLength(18)
+    expect(collection.articles).toHaveLength(21)
     expect(collection.questions).toHaveLength(5)
+    expect(collection.projects).toHaveLength(1)
     expect(collection.articles.every((article) => article.toc.length > 0)).toBe(true)
     expect(
       (await compileContent(fileURLToPath(new URL('../content/', import.meta.url)))).contentVersion,
@@ -63,6 +64,19 @@ describe('内容进入网站前的校验', () => {
     const { articles, questions } = fixture()
     questions[0].articleIds = ['missing-article']
     expect(() => validateContent(articles, questions)).toThrow('不存在')
+  })
+  it('项目实践只聚合存在且同主题的公开文章', () => {
+    const { articles, questions } = fixture()
+    const projects = structuredClone(collection.projects)
+    expect(() => validateContent(articles, questions, collection.domains, projects)).not.toThrow()
+    projects[0].articleIds = ['missing-article']
+    expect(() => validateContent(articles, questions, collection.domains, projects)).toThrow(
+      '不存在',
+    )
+    projects[0].articleIds = ['csharp-memory-basics']
+    expect(() => validateContent(articles, questions, collection.domains, projects)).toThrow(
+      '主题不一致',
+    )
   })
   it('来源链接只接受 HTTPS，日期必须真实有效', () => {
     const invalidSource = fixture()

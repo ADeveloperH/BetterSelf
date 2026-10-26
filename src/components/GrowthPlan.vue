@@ -12,7 +12,7 @@ import {
   NotebookPen,
 } from '@lucide/vue'
 import PlanRecordEditor from './PlanRecordEditor.vue'
-import { articles, questions } from '../lib/content'
+import { articles, projects, questions } from '../lib/content'
 import {
   casePlaceholder,
   planCases,
@@ -56,10 +56,15 @@ const selectedTask = computed(() => planTasks.find((task) => task.week === taskW
 const caseId = computed(() => props.route.match(/^\/plan\/cases\/([^/]+)$/)?.[1] || '')
 const currentCase = computed(() => planCases.find((item) => item.id === caseId.value))
 const suggestedArticles = computed(() =>
-  articles.filter((item) => selectedTask.value?.articleIds?.includes(item.id)),
+  articles.filter((item) =>
+    (selectedTask.value?.articleIds || currentCase.value?.articleIds)?.includes(item.id),
+  ),
 )
 const suggestedQuestions = computed(() =>
   questions.filter((item) => selectedTask.value?.questionIds?.includes(item.id)),
+)
+const suggestedProject = computed(() =>
+  projects.find((project) => project.id === currentCase.value?.projectId),
 )
 function phaseProgress(phase: number) {
   return planTasks.filter(
@@ -303,6 +308,19 @@ function phaseProgress(phase: number) {
             <li v-for="prompt in currentCase.prompts" :key="prompt">{{ prompt }}</li>
           </ul>
         </details>
+        <div v-if="suggestedProject || suggestedArticles.length" class="plan-suggestions">
+          <span>相关项目实践与笔记</span>
+          <a v-if="suggestedProject" :href="`#/library/project/${suggestedProject.id}`">
+            {{ suggestedProject.title }}<ChevronRight :size="14" />
+          </a>
+          <a
+            v-for="article in suggestedArticles"
+            :key="article.id"
+            :href="`#/article/${article.id}`"
+          >
+            {{ article.title }}<ChevronRight :size="14" />
+          </a>
+        </div>
         <PlanRecordEditor
           :id="currentCase.id"
           :key="currentCase.id"

@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { openDB } from 'idb'
 import { reactive } from 'vue'
 import { createLearningStore, parseBackup } from '../src/lib/storage'
-import { planTasks } from '../src/lib/plan'
-import { articles, questions } from '../src/lib/content'
+import { planCases, planTasks } from '../src/lib/plan'
+import { articles, projects, questions } from '../src/lib/content'
 import type { Backup, PlanRecord } from '../src/types'
 
 const stores: ReturnType<typeof createLearningStore>[] = []
@@ -186,6 +186,12 @@ describe('计划、案例与历史记录共同保存', () => {
         expect(articles.some((item) => item.id === id)).toBe(true)
       for (const id of task.questionIds || [])
         expect(questions.some((item) => item.id === id)).toBe(true)
+    }
+    for (const item of planCases) {
+      for (const id of item.articleIds || [])
+        expect(articles.some((article) => article.id === id)).toBe(true)
+      if (item.projectId)
+        expect(projects.some((project) => project.id === item.projectId)).toBe(true)
     }
   })
 })
