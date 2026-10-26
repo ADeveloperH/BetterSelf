@@ -16,8 +16,7 @@ const markdown = new MarkdownIt({
 const linkRenderer = markdown.renderer.rules.link_open
 markdown.renderer.rules.link_open = (tokens, index, options, env, self) => {
   if (/^https?:/.test(tokens[index].attrGet('href') || '')) {
-    tokens[index].attrSet('target', '_blank')
-    tokens[index].attrSet('rel', 'noopener noreferrer')
+    tokens[index].attrSet('rel', 'noreferrer')
   }
   return linkRenderer
     ? linkRenderer(tokens, index, options, env, self)

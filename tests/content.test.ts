@@ -61,10 +61,11 @@ describe('内容进入网站前的校验', () => {
     invalidDate.questions[0].updatedAt = '2026-02-30'
     expect(() => validateContent(invalidDate.articles, invalidDate.questions)).toThrow('日期无效')
   })
-  it('Markdown 转义原始 HTML，外部链接隔离窗口引用', () => {
+  it('Markdown 转义原始 HTML，外部链接保留返回历史并隔离引用', () => {
     const { html } = renderMarkdown('<script>alert(1)</script>\n\n[官方文档](https://example.com)')
     expect(html).not.toContain('<script>')
-    expect(html).toContain('rel="noopener noreferrer"')
+    expect(html).toContain('rel="noreferrer"')
+    expect(html).not.toContain('target="_blank"')
   })
   it('中文、C# 和全角输入能够检索，并支持多个关键字', () => {
     expect(matchesSearch(csharpArticle.searchText, '引用类型')).toBe(true)
