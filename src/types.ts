@@ -84,6 +84,7 @@ export interface Question {
   shortAnswerHtml: string
   explanationHtml: string
   pitfalls: string[]
+  parentId: string | null
   followUps: string[]
   articleIds: string[]
   sample: boolean

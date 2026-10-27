@@ -76,6 +76,7 @@ button {
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
+select:focus-visible,
 summary:focus-visible {
   outline: 3px solid #9c89e9;
   outline-offset: 4px;
@@ -1515,6 +1516,72 @@ svg {
 .answer-section li {
   padding-left: 3px;
   margin: 7px 0;
+}
+.interview-selectors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.interview-selectors label {
+  display: grid;
+  gap: 8px;
+  flex: 1 1 180px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.interview-selectors select {
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+}
+.interview-hint {
+  line-height: 1.8;
+  margin-bottom: 24px;
+}
+.question-parent-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--purple);
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 16px 0;
+}
+.question-parent-link svg,
+.followup-links svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.answer-section .followup-links {
+  list-style: none;
+  padding: 0;
+}
+.followup-links li {
+  padding: 0;
+}
+.followup-links a {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--purple);
+  line-height: 1.8;
+}
+.followup-links a:hover {
+  background: var(--tint);
+}
+.followup-badge {
+  color: var(--purple);
 }
 .pitfalls {
   background: var(--soft);

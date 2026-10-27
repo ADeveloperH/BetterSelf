@@ -23,16 +23,17 @@ export class Navigation {
   visits: number[] = []
   cursor = 0
 
-  constructor(route: string) {
+  constructor(route: string, ancestors: string[] = []) {
     for (const tab of tabPaths) this.tabs[tab] = this.create(tab, tab).id
     const tab = routeTab(route)
     let page = this.pages[this.tabs[tab]]!
     if (route !== tab) {
+      for (const ancestor of ancestors) page = this.create(ancestor, tab, page.id)
       const original = route.match(/^(\/article\/[^/]+)\/original$/)
       if (original) {
         const article = this.create(original[1], tab, this.tabs[tab])
         page = this.create(route, tab, article.id)
-      } else page = this.create(route, tab, this.tabs[tab])
+      } else page = this.create(route, tab, page.id)
     }
     this.tabs[tab] = page.id
     this.visits = [page.id]

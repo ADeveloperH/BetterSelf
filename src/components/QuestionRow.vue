@@ -12,7 +12,8 @@ const labels = { unknown: '不会', uncertain: '模糊', mastered: '掌握' }
     <a :href="`#/practice/${question.id}`" class="question-row-main"
       ><h3>{{ question.title }}</h3>
       <div class="question-row-meta">
-        <span>{{ question.level }}</span
+        <span v-if="question.parentId" class="followup-badge">追问</span
+        ><span>{{ question.level }}</span
         ><span class="dot">·</span><span>{{ question.tags.join(' / ') }}</span
         ><span v-if="record?.mastery" class="status-badge" :class="record.mastery">{{
           labels[record.mastery]

@@ -43,6 +43,7 @@ import { createLearningStore, parseBackup } from './lib/storage'
 import { usePwa } from './lib/pwa'
 import { getConnectivityStatus } from './lib/connectivity'
 import { Navigation, type TabPath } from './lib/navigation'
+import { questionAncestors, selectQuestions } from './lib/interview'
 import { planCases, planTasks } from './lib/plan'
 import type {
   Backup,
@@ -64,7 +65,7 @@ const readRoute = () => {
     return '/not-found'
   }
 }
-let navigation = new Navigation(readRoute())
+let navigation = new Navigation(readRoute(), questionAncestors(readRoute(), questions))
 try {
   const saved = JSON.parse(sessionStorage.getItem('betterself-navigation-v1') || 'null')
   const marker = history.state?.betterselfPage
@@ -94,6 +95,8 @@ const noteFilters = ref(emptyNoteFilters())
 const searchFilters = ref(emptyNoteFilters())
 const searchScope = ref<'article' | 'question' | 'case'>('article')
 const practiceFilter = ref('all')
+const practiceTopic = ref('all')
+const practiceScope = ref('roots')
 const reviewKind = ref<'article' | 'question'>('article')
 const reviewFilter = ref<ReviewState>('active')
 const revealed = ref(false)
@@ -211,15 +214,38 @@ function clearSearch() {
   query.value = ''
   searchFilters.value = emptyNoteFilters()
 }
+const rootQuestions = computed(() => questions.filter((question) => !question.parentId))
+const questionTopics = computed(() => [...new Set(questions.map((question) => question.topic))])
+function openParentQuestion() {
+  const parent = parentQuestion.value
+  if (!parent) return
+  if (navigation.parent?.route === `/practice/${parent.id}`) goBack()
+  else navigate(`/practice/${parent.id}`)
+}
+function resetPractice() {
+  practiceFilter.value = 'all'
+  practiceTopic.value = 'all'
+  practiceScope.value = 'all'
+}
 const visibleQuestions = computed(() =>
-  questions.filter(
-    (item) =>
-      practiceFilter.value === 'all' ||
-      (practiceFilter.value === 'favorites' && records.value[item.id]?.favorite) ||
-      (practiceFilter.value === 'unrated'
-        ? !records.value[item.id]?.mastery
-        : records.value[item.id]?.mastery === practiceFilter.value),
+  selectQuestions(
+    questions,
+    records.value,
+    practiceTopic.value,
+    practiceScope.value,
+    practiceFilter.value,
   ),
+)
+const currentFollowUps = computed(() =>
+  (currentQuestion.value?.followUps || []).map((id) =>
+    questions.find((question) => question.id === id)!,
+  ),
+)
+const parentQuestion = computed(() =>
+  questions.find((question) => question.id === currentQuestion.value?.parentId),
+)
+const siblingQuestions = computed(() =>
+  questions.filter((question) => question.parentId === currentQuestion.value?.parentId),
 )
 const reviewQuestions = computed(() =>
   questions.filter((item) => records.value[item.id]?.reviewState === reviewFilter.value),
@@ -255,7 +281,7 @@ const nextQuestion = computed(
   () => questions.find((item) => records.value[item.id]?.mastery !== 'mastered') || questions[0],
 )
 const questionIndex = computed(() =>
-  questions.findIndex((item) => item.id === currentQuestion.value?.id),
+  siblingQuestions.value.findIndex((item) => item.id === currentQuestion.value?.id),
 )
 const connectivity = computed(() =>
   getConnectivityStatus({
@@ -417,6 +443,8 @@ function capturePage() {
       searchFilters: searchFilters.value,
       searchScope: searchScope.value,
       practiceFilter: practiceFilter.value,
+      practiceTopic: practiceTopic.value,
+      practiceScope: practiceScope.value,
       reviewKind: reviewKind.value,
       reviewFilter: reviewFilter.value,
     }),
@@ -543,7 +571,9 @@ async function activateRoute() {
     noteFilters.value = view.noteFilters as ReturnType<typeof emptyNoteFilters>
     searchFilters.value = view.searchFilters as ReturnType<typeof emptyNoteFilters>
     searchScope.value = view.searchScope as 'article' | 'question' | 'case'
-    practiceFilter.value = view.practiceFilter as string
+    practiceFilter.value = (view.practiceFilter as string) || 'all'
+    practiceTopic.value = (view.practiceTopic as string) || 'all'
+    practiceScope.value = (view.practiceScope as string) || 'roots'
     reviewKind.value = view.reviewKind as 'article' | 'question'
     reviewFilter.value = view.reviewFilter as ReviewState
   }
@@ -1116,20 +1146,47 @@ onUnmounted(() => {
           <div class="practice-banner panel">
             <div class="practice-banner-icon"><Code2 :size="29" /></div>
             <div>
-              <span class="card-eyebrow">当前专题 · 示例内容</span>
-              <h2>C# 与 Unity 面试基础</h2>
+              <span class="card-eyebrow">Unity 移动游戏客户端 · 中高级准备</span>
+              <h2>从基础回答，到场景追问</h2>
               <p>
-                {{ questions.length }} 道题 · 已自评 {{ ratedCount }} 道 · 待巩固
-                {{ weakQuestions.length }} 道
+                {{ rootQuestions.length }} 个主问题 ·
+                {{ questions.length - rootQuestions.length }} 个追问<br />
+                已自评 {{ ratedCount }} 道 · 待巩固 {{ weakQuestions.length }} 道
               </p>
             </div>
             <a :href="`#/practice/${nextQuestion.id}`" class="primary-button"
               >{{ ratedCount ? '继续练习' : '开始练习' }} <ArrowRight :size="16"
             /></a>
           </div>
+          <div class="interview-selectors">
+            <label
+              >练习专题
+              <select v-model="practiceTopic">
+                <option value="all">全部专题</option>
+                <option v-for="topic in questionTopics" :key="topic" :value="topic">
+                  {{ topic }}
+                </option>
+              </select>
+            </label>
+            <label
+              >练习范围
+              <select v-model="practiceScope" :disabled="practiceFilter !== 'all'">
+                <option value="roots">主问题</option>
+                <option value="all">包含追问</option>
+              </select>
+            </label>
+          </div>
+          <p class="muted small interview-hint">
+            {{
+              practiceFilter === 'all'
+                ? '先回答主问题，再沿追问深入；也可以选择包含追问单独练习。'
+                : '收藏和自评筛选同时包含主问题与追问。'
+            }}
+          </p>
           <div class="section-heading question-heading">
             <h2>
-              全部问题 <span class="section-count">{{ questions.length }}</span>
+              {{ practiceFilter === 'all' && practiceScope === 'roots' ? '主问题' : '练习问题' }}
+              <span class="section-count">{{ visibleQuestions.length }}</span>
             </h2>
             <span class="muted small">按掌握程度筛选</span>
           </div>
@@ -1165,7 +1222,7 @@ onUnmounted(() => {
             <Layers :size="30" />
             <h2>这个分组还没有题目</h2>
             <p>完成自评后，题目会出现在对应分组。</p>
-            <button class="secondary-button" @click="practiceFilter = 'all'">查看全部问题</button>
+            <button class="secondary-button" @click="resetPractice">查看全部问题</button>
           </div>
         </template>
 
@@ -1174,8 +1231,9 @@ onUnmounted(() => {
             <button class="subtle-link page-back" @click="goBack">
               <ArrowLeft :size="16" /> 返回{{ backLabel }}</button
             ><span class="question-counter"
-              >{{ String(questionIndex + 1).padStart(2, '0') }}
-              <span>/ {{ String(questions.length).padStart(2, '0') }}</span></span
+              >{{ currentQuestion.parentId ? '追问' : '主问题' }}
+              {{ String(questionIndex + 1).padStart(2, '0') }}
+              <span>/ {{ String(siblingQuestions.length).padStart(2, '0') }}</span></span
             >
           </div>
           <article class="panel question-detail">
@@ -1200,6 +1258,9 @@ onUnmounted(() => {
                 />
               </button>
             </div>
+            <button v-if="parentQuestion" class="question-parent-link" @click="openParentQuestion">
+              <ArrowLeft :size="15" /> 上一层问题：{{ parentQuestion.title }}
+            </button>
             <h1 tabindex="-1">{{ currentQuestion.title }}</h1>
             <div v-if="!revealed" class="think-first">
               <div class="thinking-icon"><BrainCircuit :size="30" /></div>
@@ -1224,11 +1285,17 @@ onUnmounted(() => {
                   <li v-for="pitfall in currentQuestion.pitfalls" :key="pitfall">{{ pitfall }}</li>
                 </ul>
               </section>
-              <section class="answer-section">
+              <section v-if="currentFollowUps.length" class="answer-section followup-section">
                 <h2>继续追问</h2>
-                <ol>
-                  <li v-for="followUp in currentQuestion.followUps" :key="followUp">
-                    {{ followUp }}
+                <p class="muted small">
+                  进入追问，先独立回答，再查看解释；每道题单独记录掌握程度。
+                </p>
+                <ol class="followup-links">
+                  <li v-for="followUp in currentFollowUps" :key="followUp.id">
+                    <a :href="`#/practice/${followUp.id}`">
+                      <span>{{ followUp.title }}</span
+                      ><ChevronRight :size="18" />
+                    </a>
                   </li>
                 </ol>
               </section>
@@ -1267,13 +1334,13 @@ onUnmounted(() => {
             <div class="question-pagination">
               <a
                 v-if="questionIndex > 0"
-                :href="`#/practice/${questions[questionIndex - 1].id}`"
+                :href="`#/practice/${siblingQuestions[questionIndex - 1].id}`"
                 class="subtle-link"
                 ><ChevronLeft :size="17" /> 上一题</a
               ><a v-else href="#/practice" class="subtle-link">题目列表</a
               ><a
-                v-if="questionIndex < questions.length - 1"
-                :href="`#/practice/${questions[questionIndex + 1].id}`"
+                v-if="questionIndex < siblingQuestions.length - 1"
+                :href="`#/practice/${siblingQuestions[questionIndex + 1].id}`"
                 class="secondary-button"
                 >下一题 <ArrowRight :size="16" /></a
               ><a v-else href="#/review" class="primary-button"
