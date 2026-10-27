@@ -160,4 +160,88 @@ describe('学习记录持久化和备份', () => {
     const { reviewState: _, ...missing } = item
     expect(() => parseBackup(JSON.stringify({ ...backup([]), records: [missing] }))).toThrow('无效')
   })
+  it('已有数据库合并旧追问与计划关联，保留收藏和薄弱自评，重新打开不恢复旧状态', async () => {
+    const name = crypto.randomUUID()
+    const first = newStore(name)
+    await first.all()
+    const db = await openDB(name)
+    await db.put('records', {
+      ...record('q-value-reference', '2026-10-27T00:00:00.000Z'),
+      mastery: 'mastered',
+      favorite: false,
+      reviewState: 'completed',
+    })
+    await db.put('records', record('q-struct-list-copy', '2026-10-27T01:00:00.000Z'))
+    await db.put('records', {
+      ...record('q-reference-ref', '2026-10-27T02:00:00.000Z'),
+      mastery: 'unknown',
+    })
+    await db.put('planRecords', {
+      id: 'case-one',
+      kind: 'case',
+      status: 'active',
+      notes: '背包预览验证',
+      articleIds: [],
+      questionIds: ['q-value-reference', 'q-struct-list-copy', 'q-reference-ref'],
+      updatedAt: '2026-10-27T02:00:00.000Z',
+    })
+    db.close()
+    await first.close()
+    const migrated = newStore(name)
+    expect(await migrated.all()).toMatchObject([
+      { id: 'q-value-reference', mastery: 'unknown', favorite: true, reviewState: 'active' },
+    ])
+    expect((await migrated.allPlan())[0]).toMatchObject({
+      notes: '背包预览验证',
+      questionIds: ['q-value-reference'],
+    })
+    await migrated.update('q-value-reference', 'question', { mastery: 'mastered', favorite: false })
+    await migrated.close()
+    const reopened = newStore(name)
+    expect(await reopened.all()).toMatchObject([
+      { id: 'q-value-reference', mastery: 'mastered', favorite: false, reviewState: 'completed' },
+    ])
+  })
+  it('导入旧追问备份也合并记录，旧时间戳不会覆盖后续自评', async () => {
+    const store = newStore()
+    await store.import(
+      backup([
+        record('q-generic-boxing', '2026-10-22T01:00:00.000Z'),
+        { ...record('q-allocation-proof', '2026-10-22T02:00:00.000Z'), mastery: 'mastered' },
+      ]),
+    )
+    expect(await store.all()).toMatchObject([
+      { id: 'q-boxing', mastery: 'uncertain', favorite: true, reviewState: 'active' },
+    ])
+    await store.update('q-boxing', 'question', { mastery: 'mastered', favorite: false })
+    await store.import(backup([record('q-generic-boxing', '2026-10-22T01:00:00.000Z')]))
+    expect(await store.all()).toMatchObject([
+      { id: 'q-boxing', mastery: 'mastered', favorite: false },
+    ])
+    const destination = newStore()
+    await destination.import(await store.export())
+    expect(await destination.all()).toEqual(await store.all())
+  })
+  it('只掌握一条旧子题不会将整个案例自动标记掌握，未改的主问题记录原样保留', () => {
+    const result = parseBackup(
+      JSON.stringify(
+        backup([
+          {
+            ...record('q-coroutine-frame-budget', '2026-10-22T01:00:00.000Z'),
+            mastery: 'mastered',
+            reviewState: 'completed',
+          },
+          record('q-value-reference', '2026-10-22T02:00:00.000Z'),
+        ]),
+      ),
+    )
+    expect(result.records.find((item) => item.id === 'q-coroutines')).toMatchObject({
+      mastery: null,
+      favorite: true,
+      reviewState: 'none',
+    })
+    expect(result.records.find((item) => item.id === 'q-value-reference')).toEqual(
+      record('q-value-reference', '2026-10-22T02:00:00.000Z'),
+    )
+  })
 })

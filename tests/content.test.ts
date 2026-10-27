@@ -15,8 +15,7 @@ const fixture = () => ({
 describe('内容进入网站前的校验', () => {
   it('实际示例可以构建，并保留稳定的内容指纹', async () => {
     expect(collection.articles).toHaveLength(21)
-    expect(collection.questions).toHaveLength(15)
-    expect(collection.questions.filter((question) => !question.parentId)).toHaveLength(5)
+    expect(collection.questions).toHaveLength(5)
     expect(collection.projects).toHaveLength(1)
     expect(collection.articles.every((article) => article.toc.length > 0)).toBe(true)
     expect(
@@ -66,38 +65,27 @@ describe('内容进入网站前的校验', () => {
     questions[0].articleIds = ['missing-article']
     expect(() => validateContent(articles, questions)).toThrow('不存在')
   })
-  it('每条追问都能找到独立答案，叶子题允许没有后续追问', () => {
+  it('原追问知识并入完整案例答案，搜索能够命中处理与验证细节', () => {
     for (const question of collection.questions) {
-      for (const id of question.followUps) {
-        const followUp = collection.questions.find((item) => item.id === id)!
-        expect(followUp.shortAnswerHtml).toContain('<p>')
-        expect(followUp.explanationHtml).toContain('回答要点')
-        expect(followUp.parentId).toBe(question.id)
-      }
+      expect(question.explanationHtml).toContain('案例')
+      expect(question.explanationHtml).toMatch(/验证|测试/)
+      expect(question).not.toHaveProperty('followUps')
+      expect(question).not.toHaveProperty('parentId')
+      expect(question.sample).toBe(true)
+      expect(question.verifiedAt).toBeNull()
     }
-    expect(collection.questions.filter((question) => !question.followUps.length)).toHaveLength(10)
     expect(
-      collection.questions.find((question) => question.id === 'q-value-reference')?.searchText,
-    ).toContain('list 字段')
-  })
-  it('阻止失效、重复和循环的追问关系', () => {
-    const missing = fixture()
-    missing.questions[0].followUps = ['missing-question']
-    expect(() => validateContent(missing.articles, missing.questions)).toThrow(
-      '追问 missing-question 不存在',
+      collection.questions.find((item) => item.id === 'q-value-reference')?.explanationHtml,
+    ).toContain('Replace')
+    expect(
+      collection.questions.find((item) => item.id === 'q-string-builder')?.searchText,
+    ).toContain('语言切换')
+    expect(collection.questions.find((item) => item.id === 'q-gc-alloc')?.searchText).toContain(
+      '迟到回调',
     )
-    const duplicate = fixture()
-    duplicate.questions[0].followUps.push(duplicate.questions[0].followUps[0])
-    expect(() => validateContent(duplicate.articles, duplicate.questions)).toThrow('追问重复')
-    const cycle = fixture()
-    cycle.questions[0].followUps.push(cycle.questions[1].id)
-    cycle.questions[1].followUps.push(cycle.questions[0].id)
-    expect(() => validateContent(cycle.articles, cycle.questions)).toThrow('追问存在循环')
-  })
-  it('父题必须存在且确实包含这道追问', () => {
-    const { articles, questions } = fixture()
-    questions.find((question) => question.parentId)!.parentId = 'missing-question'
-    expect(() => validateContent(articles, questions)).toThrow('父题关联无效')
+    expect(collection.questions.find((item) => item.id === 'q-coroutines')?.searchText).toContain(
+      'nativecontainer',
+    )
   })
   it('项目实践只聚合存在且同主题的公开文章', () => {
     const { articles, questions } = fixture()

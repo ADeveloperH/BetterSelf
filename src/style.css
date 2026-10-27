@@ -1545,44 +1545,6 @@ svg {
   line-height: 1.8;
   margin-bottom: 24px;
 }
-.question-parent-link {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  color: var(--purple);
-  font-size: 12px;
-  line-height: 1.8;
-  margin: 16px 0;
-}
-.question-parent-link svg,
-.followup-links svg {
-  flex-shrink: 0;
-  margin-top: 3px;
-}
-.answer-section .followup-links {
-  list-style: none;
-  padding: 0;
-}
-.followup-links li {
-  padding: 0;
-}
-.followup-links a {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--purple);
-  line-height: 1.8;
-}
-.followup-links a:hover {
-  background: var(--tint);
-}
-.followup-badge {
-  color: var(--purple);
-}
 .pitfalls {
   background: var(--soft);
   padding: 20px 23px;

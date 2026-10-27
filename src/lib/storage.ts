@@ -1,4 +1,5 @@
 import { openDB, type DBSchema } from 'idb'
+import { mergeQuestionRecords, questionLinks } from './interview'
 import type {
   Backup,
   ContentKind,
@@ -129,12 +130,18 @@ export function parseBackup(text: string): Backup {
         status: item.status,
         notes: item.notes,
         articleIds: [...item.articleIds],
-        questionIds: [...item.questionIds],
+        questionIds: questionLinks(item.questionIds),
         updatedAt: item.updatedAt,
       })
     }
   }
-  return { app: 'BetterSelf', schemaVersion: 3, exportedAt: data.exportedAt, records, planRecords }
+  return {
+    app: 'BetterSelf',
+    schemaVersion: 3,
+    exportedAt: data.exportedAt,
+    records: mergeQuestionRecords(records),
+    planRecords,
+  }
 }
 
 export function createLearningStore(name = 'betterself-learning') {
@@ -146,6 +153,27 @@ export function createLearningStore(name = 'betterself-learning') {
     blocking() {
       void database.then((db) => db.close())
     },
+  }).then(async (db) => {
+    // One transaction moves existing 0.6.0 child records and plan links to the complete answer.
+    // Source rows are removed only after their state has been consolidated successfully.
+    const tx = db.transaction(['records', 'planRecords'], 'readwrite')
+    const stored = await tx.objectStore('records').getAll()
+    const merged = mergeQuestionRecords(stored.map(withReviewState))
+    const ids = new Set(merged.map((record) => record.id))
+    for (const record of stored) {
+      if (!ids.has(record.id)) await tx.objectStore('records').delete(record.id)
+    }
+    for (const record of merged) {
+      if (JSON.stringify(record) !== JSON.stringify(stored.find((item) => item.id === record.id)))
+        await tx.objectStore('records').put(record)
+    }
+    for (const record of await tx.objectStore('planRecords').getAll()) {
+      const questionIds = questionLinks(record.questionIds)
+      if (JSON.stringify(questionIds) !== JSON.stringify(record.questionIds))
+        await tx.objectStore('planRecords').put({ ...record, questionIds })
+    }
+    await tx.done
+    return db
   })
   return {
     async all() {
@@ -178,7 +206,7 @@ export function createLearningStore(name = 'betterself-learning') {
       }
       // Vue exposes selected links as reactive arrays; IndexedDB only accepts plain data.
       next.articleIds = [...next.articleIds]
-      next.questionIds = [...next.questionIds]
+      next.questionIds = questionLinks(next.questionIds)
       await tx.store.put(next)
       await tx.done
       return next

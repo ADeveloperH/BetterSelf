@@ -1,0 +1,12 @@
+{
+  "q-struct-list-copy": "q-value-reference",
+  "q-reference-ref": "q-value-reference",
+  "q-generic-boxing": "q-boxing",
+  "q-allocation-proof": "q-boxing",
+  "q-ui-text-refresh": "q-string-builder",
+  "q-string-benchmark": "q-string-builder",
+  "q-allocation-frame-time": "q-gc-alloc",
+  "q-performance-regression": "q-gc-alloc",
+  "q-coroutine-frame-budget": "q-coroutines",
+  "q-jobs-boundary": "q-coroutines"
+}

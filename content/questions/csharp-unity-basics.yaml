@@ -7,31 +7,70 @@
   level: 基础
   shortAnswer: 普通赋值时，值类型复制值，引用类型复制对象引用。两个引用变量可能指向同一个对象；包含引用字段的结构体也可能共享内部对象。
   explanation: |
-    可以从一段最小代码说明“复制引用”和“复制对象”的区别：
+    ### 案例：背包预览修改了真实背包
 
-    ```csharp
-    var original = new List<int> { 1 };
-    var alias = original;
-    alias.Add(2);
-    // original 和 alias 指向同一个 List，元素数都为 2。
-    ```
+    在装备预览界面，需要复制背包状态，让玩家试换装备后再确认。如果用 struct 包住 List，再直接赋值给预览数据，修改预览列表可能连真实背包一起变。
 
-    继续追问时，分别分析值类型字段、引用类型字段，以及是否用了 `ref` 参数。回答应建立在具体代码的语义上。
+    我会先区分“变量复制”和“对象复制”：struct 赋值复制每个字段，其中 List 字段复制的是引用；两份结构体仍然指向同一个列表。这里的关键是共享了什么，与“struct 一定在栈上”无关。
+
+    ~~~csharp
+    using System.Collections.Generic;
+    struct Bag { public List<int> Items; }
+
+    // 方法内：模拟背包预览
+    var original = new Bag { Items = new List<int> { 1 } };
+    var preview = original;
+    preview.Items.Add(2); // original.Items.Count 也变为 2
+    preview.Items = new List<int> { 9 }; // 只替换 preview 的字段
+    // original.Items 仍是包含 1、2 的原列表
+    ~~~
+
+    ### 处理：明确快照的隔离边界
+
+    如果列表元素只有物品 ID 等值数据，可以先复制容器：preview.Items = new List<int>(original.Items)。如果是 List<Item>，新容器中的 Item 引用仍可能共享，改 Item.Count 还会影响原物品。
+
+    我会只复制预览要修改的状态，或使用 ID 加值数据的快照；确认时提交变更，取消时丢弃快照。递归深拷贝整个对象图会增加分配和维护成本，不能只为了“独立”就全部复制。不可变快照也必须限制内部可变引用，不能仅给字段加 readonly。
+
+    ### 同一案例中的参数传递：修改列表与替换列表
+
+    普通引用类型参数按值传递，复制的是引用。函数能修改共享对象，但给参数重新赋值不会替换调用方变量。ref 允许修改调用方变量本身。
+
+    ~~~csharp
+    static void Change(List<int> items) {
+        items.Add(2); // 调用方看得到
+        items = new List<int> { 9 }; // 只改局部参数
+    }
+    static void Replace(ref List<int> items) {
+        items = new List<int> { 9 }; // 替换调用方变量
+    }
+    ~~~
+
+    如果只需要生成预览列表，我更倾向显式返回新集合，便于表达所有权；确需替换调用方变量才用 ref。值类型使用 ref 也能修改调用方的值，但它不是无条件的性能优化开关。替换变量后，其他别名仍可能指向旧对象。
+
+    ### 验证与面试表达
+
+    分别验证 Add、替换列表字段、修改嵌套 Item、确认及取消预览；普通传参和 ref 传参检查元素与引用身份，明确 null 输入契约。
+
+    可以这样收束回答：“我先确认复制的层级，定位到结构体内部的共享引用，再按预览需要建立独立状态，并用嵌套对象修改和取消预览验证隔离。”这是案例分析方式，不代表已完成的个人项目成果。
   pitfalls:
     - 把值类型简单描述为“永远在栈上”。
     - 把结构体赋值误认为会深拷贝所有内部对象。
-  followUps:
-    - q-struct-list-copy
-    - q-reference-ref
+    - 把容器复制等同于递归深拷贝。
+    - 把引用类型按值传参称为 ref 传参。
+    - 以为替换一个变量会让其他旧别名自动改指向。
   articleIds:
     - csharp-memory-basics
-  applicability: C# 普通赋值与参数语义；具体运行时的存储优化另行测量。
+  applicability: Unity 移动游戏客户端面试练习；以实际开发场景构造的示例，不代表个人项目业绩或已验证性能收益。Unity 工具操作以 2022.3 为参考，目标平台、后端及包版本需按项目核验。
   updatedAt: 2026-10-27
-  verifiedAt: 2026-10-22
+  verifiedAt: null
   sample: true
   sources:
     - title: Microsoft · C# 类型规范
       url: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/types
+    - title: Microsoft：结构体的值语义
+      url: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/struct
+    - title: Microsoft：值传递与引用传递
+      url: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/method-parameters
 - id: q-boxing
   title: 什么是装箱与拆箱？如何识别代码中的装箱？
   topic: C# 与内存
@@ -42,28 +81,58 @@
   level: 原理
   shortAnswer: 装箱把值类型转换为 object 或其实现的接口类型，通常需要创建承载该值的对象；拆箱从这个对象中提取对应的值类型。
   explanation: |
-    ```csharp
-    int score = 42;
-    object boxed = score;
-    int restored = (int)boxed;
-    ```
+    ### 案例：每帧统计战斗分数产生临时分配
 
-    定位时先检查值传给了什么类型的参数，再看调用点和泛型约束。对实际热路径，结合编译结果和目标运行时的分配数据验证。拆箱还要求原来的装箱类型匹配。
+    假设战斗统计每帧把分数放入通用集合或传入 object 参数的接口。我的第一步是找值类型转换为 object 或接口的位置，而不是把所有 GC.Alloc 都叫装箱。
+
+    ~~~csharp
+    var values = new System.Collections.Generic.List<int>(100);
+    var objects = new System.Collections.Generic.List<object>(100);
+    int score = 42;
+    values.Add(score); // 槽位保存 int，此处无需装箱
+    objects.Add(score); // int 转 object，发生装箱
+    int restored = (int)objects[0]; // 按原装箱类型拆箱
+    long widened = (int)objects[0]; // 先拆为 int，再做数值转换
+    // (long)objects[0] 不能直接拆出原来装箱的 int
+    ~~~
+
+    ### 处理：修改实际热路径的类型边界
+
+    同类数值优先使用 List<int> 等明确类型，避免在高频接口中无必要地转为 object。预设 List<object> 容量只能减少扩容，不能取消 Add(score) 的装箱；反过来 List<int> 也有集合、容量等成本，通过非泛型接口枚举等调用方式仍可能分配。
+
+    如果日志接口带 object 参数，需要区分参数装箱、字符串格式化和最终日志输出。确认关闭日志时调用方是否仍构造参数，再调整接口或调用条件。不是所有类型转换都会装箱，具体后端是否消除某次分配以目标 Player 的证据为准。
+
+    ### 验证：证明是哪一个调用在分配
+
+    1. 写下假设：哪个 int → object 转换、每帧调用多少次，以及改动后业务输出应保持什么。
+    2. 在目标设备运行可采样的测试 Player，打开 Unity 2022.3 的 Window > Analysis > Profiler，连接目标；在 CPU Usage 中定位复现帧的 GC.Alloc 样本，按该版本工具启用分配 Call Stacks。
+    3. 预热并固定集合容量，把加入、读取、遍历分开观察；隔离初始化、日志输出、扩容和格式化的干扰，只替换一个怀疑调用做对照。
+    4. 确认目标调用的分配栈消失或变化、输出一致，再在正常发布配置复核帧时间。记录设备、Unity 版本、脚本后端、调用次数、分配与采样方式。
+
+    Deep Profile 会扰动耗时，先用普通采样和分配调用栈缩小范围，必要时再局部使用。不凭 Editor 的一个总数宣布真机收益，也不编造每次分配大小或优化百分比。
+
+    ### 面试表达
+
+    “我从分数进入 object 接口的位置提出装箱假设，用真机调用栈区分装箱与扩容等成本，再把同类型热路径改为泛型或明确类型，最后验证分配来源和业务输出。”如果没有采样数据，应说明这是排查方案，而不是已验证的优化结果。
   pitfalls:
     - 认为所有类型转换都会装箱。
     - 认为把装箱的 int 直接拆成 long 就等同于数值转换。
-  followUps:
-    - q-generic-boxing
-    - q-allocation-proof
+    - 认为预分配 List<object> 容量就能消除 int 装箱。
+    - 把所有集合分配都归因于装箱。
+    - 把 Profiler 自身或 Editor 界面分配算成业务调用。
+    - 只看总分配减少就断言某个转换被消除。
   articleIds:
     - csharp-memory-basics
-  applicability: C# 装箱语义；Unity 后端的优化效果以实际测量为准。
+    - unity-mobile-performance-playbook
+  applicability: Unity 移动游戏客户端面试练习；以实际开发场景构造的示例，不代表个人项目业绩或已验证性能收益。Unity 工具操作以 2022.3 为参考，目标平台、后端及包版本需按项目核验。
   updatedAt: 2026-10-27
-  verifiedAt: 2026-10-22
+  verifiedAt: null
   sample: true
   sources:
-    - title: Microsoft · 装箱与拆箱
+    - title: Microsoft：装箱与拆箱
       url: https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/types/boxing-and-unboxing
+    - title: Unity 2022.3：CPU Usage Profiler
+      url: https://docs.unity3d.com/2022.3/Documentation/Manual/ProfilerCPU.html
 - id: q-string-builder
   title: string 的不可变性意味着什么？何时考虑 StringBuilder？
   topic: C# 与内存
@@ -73,31 +142,64 @@
   level: 基础
   shortAnswer: string 的内容创建后不能原地修改。需要反复拼接大量片段时，可以考虑 StringBuilder；少量拼接应结合编译器和实际开销判断。
   explanation: |
-    ```csharp
+    ### 案例：战斗倒计时每帧拼接 UI 文本
+
+    一个 60 FPS 更新的倒计时只显示整数秒。如果每帧执行“剩余：”加数字，显示结果大部分时间不变，却仍反复构造文本、给控件赋值。我会先确认显示精度和时间来源，优先减少无效刷新，再考虑拼接工具。
+
+    ~~~csharp
+    int shownSeconds = -1;
+    void Refresh(float remaining) {
+        int seconds = UnityEngine.Mathf.Max(0,
+            UnityEngine.Mathf.CeilToInt(remaining));
+        if (seconds == shownSeconds) return;
+        shownSeconds = seconds;
+        // 在此格式化，再更新实际使用的文本控件
+    }
+    ~~~
+
+    这段代码展示刷新门控，不是完整计时器。后台恢复后应从正确的时间源重算剩余时间，不能靠减少 UI 刷新次数累计计时。重新绑定任务、语言或格式变化时也要使缓存失效，否则秒数相同仍会漏刷新。隐藏面板可暂停刷新，重开时强制同步。
+
+    ### StringBuilder 放在确实需要大量追加的地方
+
+    string 创建后内容不可原地修改，但这不意味着任何少量拼接都必须用 StringBuilder。比如结算窗口需要循环生成许多战斗条目的汇总文本时，构建器更值得评估：
+
+    ~~~csharp
+    using System.Text;
+    // 方法内：labels 为待展示条目
     var builder = new StringBuilder();
-    for (int index = 0; index < labels.Count; index++)
-    {
-        builder.Append(labels[index]);
+    for (int i = 0; i < labels.Count; i++) {
+        builder.Append(labels[i]);
     }
     string text = builder.ToString();
-    ```
+    ~~~
 
-    要比较的是完整路径，包括构建器、容量扩展和最终字符串的成本。StringBuilder 也需要内存，适合放在实际场景中测量。
+    StringBuilder 的创建、扩容和最终 ToString 都有成本；重用时还要管理 Clear、容量和持有大缓冲区的代价。先构造字符串再比较是否相同，已经支付了此前的构造成本。
+
+    ### 对照测试与功能回归
+
+    我会把少量固定拼接、大量循环追加和 UI 刷新分成三类工作负载，固定输入与输出，在目标设备、相同脚本后端和构建配置下预热后多轮交错采样。完整计入构建器生命周期、扩容、最终字符串以及控件更新，不在计时区间打日志。
+
+    同时观察分配、耗时和长期占用；回到完整界面确认是否改善长帧。保留原始样本、采样规模及 P95 / P99 等分布，不能用单次 Editor 均值声称所有手机收益一致。
+
+    功能上覆盖边界秒数、到零、暂停恢复、隐藏重开、换任务和语言切换。最终回答应落到：“倒计时先按可见变化刷新，大量汇总文本再评估 StringBuilder，用完整路径数据和显示正确性决定方案。”
   pitfalls:
     - 认为任何字符串拼接都应该换成 StringBuilder。
     - 认为用了 StringBuilder 就完全没有分配。
-  followUps:
-    - q-ui-text-refresh
-    - q-string-benchmark
+    - 先 ToString 或拼接，再比较新旧字符串，忽略此前已发生的构造。
+    - 仅按数值缓存，语言或绑定对象变化时不刷新。
+    - 只计 Append，不计创建和 ToString。
+    - 用单次 Editor 计时宣布所有手机都提升同样比例。
   articleIds:
     - csharp-memory-basics
-  applicability: .NET 字符串基础；性能取决于实际使用方式。
+  applicability: Unity 移动游戏客户端面试练习；以实际开发场景构造的示例，不代表个人项目业绩或已验证性能收益。Unity 工具操作以 2022.3 为参考，目标平台、后端及包版本需按项目核验。
   updatedAt: 2026-10-27
-  verifiedAt: 2026-10-22
+  verifiedAt: null
   sample: true
   sources:
-    - title: Microsoft · StringBuilder
+    - title: Microsoft：StringBuilder
       url: https://learn.microsoft.com/en-us/dotnet/standard/base-types/stringbuilder
+    - title: Unity 2022.3：垃圾回收最佳实践
+      url: https://docs.unity3d.com/2022.3/Documentation/Manual/performance-garbage-collection-best-practices.html
 - id: q-gc-alloc
   title: Unity 每帧都有 GC Alloc，你会如何排查？
   topic: 移动端性能诊断
@@ -108,24 +210,57 @@
   level: 场景
   shortAnswer: 先固定复现场景并在目标 Player 采样，找到反复分配的调用点，再修改一个明确原因，对比修改前后的分配与帧耗时。
   explanation: |
-    按“复现 → 采样 → 调用栈 → 修改 → 对比”的顺序记录证据。重点检查临时集合、字符串和可能装箱的热路径。性能数据注明设备、Unity 版本、脚本后端和构建配置。
+    ### 案例：战斗连续释放技能时周期性卡顿
 
-    仅看到分配并不能判断它是否造成了可感知的卡顿，还要结合频率、规模和帧时间分析。
+    假设复现操作是连续释放技能，期间反复创建特效、临时集合和文本。先记录设备、Unity 版本、脚本后端、构建方式和操作序列，区分持续低帧、周期长帧、首个特效抖动与切关停顿，不把“有 GC.Alloc”直接等同于根因。
+
+    ### 排查：先建立分配与长帧的证据链
+
+    1. 在目标设备复现，通过 Window > Analysis > Profiler 连接测试 Player；在 CPU Usage 选择问题帧，检查 GC.Alloc 及对应调用栈，区分初始化与稳定战斗阶段。
+    2. 对齐长帧和回收、实例化、脚本计算等样本。先检查反复创建的集合、字符串和装箱热路径；总分配下降不代表某次分配已经被定位。
+    3. 假如证据指向频繁创建特效，再对该路径做对象池对照；如果证据指向文本或临时集合，则分别处理。每次保留相同输入，只验证一个明确假设。
+
+    ### 方案：对象池同时改变了生命周期
+
+    池化可能减少创建与分配，但会保留状态、回调与内存。我会先定义租用和归还契约，明确谁重置 Transform、粒子、动画、碰撞、业务字段和事件订阅；必要时限制容量，控制预热时机。
+
+    特别要处理“对象已回收并重新租用，旧请求才返回”的情况：给请求与租用带身份或版本，在应用结果前确认仍属于当前租用；不能只凭对象还存在就执行旧回调。取消、重复完成和双重回收也需要可断言的行为。
+
+    ### 分配变少后，继续检查帧时间与成本转移
+
+    如果 GC.Alloc 降下来了，玩家仍觉得卡，我会继续分流 CPU、渲染线程和 GPU，检查资源加载、Shader 首次使用、同步等待及池预热。主线程在等待不代表主线程脚本最慢，托管零分配也不代表没有原生内存或其他开销。
+
+    对比同一关卡同一操作的长帧分布、内存峰值、启动及切关耗时，确认没有把成本从战斗移到入场，也没有用持续增长的缓存换取表面改善。
+
+    ### 验证与回退
+
+    - 连续生成、归还、复用，检查视觉与业务状态是否符合新对象契约。
+    - 模拟迟到回调、失败重试、双重回收、超出池容量、切场景及暂停恢复，检查错误复用与泄漏。
+    - 相同设备和构建条件下保留修改前后采样与录像，同时检查帧时间、总完成时间和峰值内存；采样构建用于定位，正常发布配置复核体验。
+    - 保留基线和变更开关，内部验证后逐步观察。只报告已执行的覆盖范围，未测设备与长时稳定性列为待验证。
+
+    面试中我会按“复现与证据 → 根因假设 → 有边界的改动 → 性能和功能双验证 → 回退”讲述。没有真实采样时，不预设唯一根因，也不声称卡顿已经解决。
   pitfalls:
     - 将 Editor 中的数值直接等同于设备上的结果。
     - 为减少分配而引入过多缓存，却不检查内存占用与行为。
-  followUps:
-    - q-allocation-frame-time
-    - q-performance-regression
+    - 把 GC.Alloc = 0 当作整帧没有内存或性能开销。
+    - 只看平均 FPS，忽略长帧和内存峰值。
+    - 以单元测试通过替代所有真机视觉和长时测试。
+    - 对象池只检查位置复位，不模拟迟到回调。
   articleIds:
     - csharp-memory-basics
-  applicability: 排查方法参考 Unity 2022.3；具体工具界面与数据按项目版本核验。
+    - unity-mobile-performance-playbook
+    - unity-android-frame-pacing-case
+    - unity-pooling-lifecycle-regression
+  applicability: Unity 移动游戏客户端面试练习；以实际开发场景构造的示例，不代表个人项目业绩或已验证性能收益。Unity 工具操作以 2022.3 为参考，目标平台、后端及包版本需按项目核验。
   updatedAt: 2026-10-27
-  verifiedAt: 2026-10-22
+  verifiedAt: null
   sample: true
   sources:
     - title: Unity 2022.3 · 垃圾回收最佳实践
       url: https://docs.unity3d.com/2022.3/Documentation/Manual/performance-garbage-collection-best-practices.html
+    - title: Unity 2022.3：CPU Usage Profiler
+      url: https://docs.unity3d.com/2022.3/Documentation/Manual/ProfilerCPU.html
 - id: q-coroutines
   title: Unity 协程与多线程有什么区别？
   topic: Unity 异步与生命周期
@@ -135,28 +270,59 @@
   level: 原理
   shortAnswer: Unity 协程通过挂起和恢复，把工作分布到不同帧或时机。协程中的同步代码仍在主线程执行；耗时计算并不会因为放入协程就自动转移到后台。
   explanation: |
-    ```csharp
-    IEnumerator ShowSteps()
-    {
-        ShowFirstStep();
-        yield return null;
-        ShowSecondStep();
-    }
-    ```
+    ### 案例：打开背包时一次创建大量列表项
 
-    这段代码表达的是执行时机。选择多线程方案时，还需要考虑共享数据和 Unity API 的线程限制。
+    把创建列表的大循环放进 IEnumerator，仍可能卡住一帧。协程控制挂起和恢复的时机，yield 之前的同步代码仍在主线程；循环结束后才 yield，不能拆掉已经发生的长帧。
+
+    ### 方案一：在安全边界分帧，并管理取消与清理
+
+    ~~~csharp
+    System.Collections.IEnumerator BuildRows(int count) {
+        const int perFrame = 8; // 示例值，必须按设备测量
+        for (int i = 0; i < count; i++) {
+            CreateRow(i); // 项目自己的主线程 UI 创建方法
+            if ((i + 1) % perFrame == 0) yield return null;
+        }
+    }
+    ~~~
+
+    这段代码只展示分割点，接入时还要补任务所有者、取消入口与部分结果清理。固定八个只是示例：每项成本不同就不能保证耗时，可在可拆分的安全边界用时间预算决定何时挂起。如果一次 CreateRow 已超过预算，必须进一步拆分、减少实例化或预热。
+
+    用户关闭、重开窗口时，停止旧任务并清理已创建项；使用请求版本检查后续结果，防止旧任务覆盖新窗口。失败、场景卸载和对象复用也遵循同一所有权契约。
+
+    分帧是在单帧预算与总完成时延之间取舍，不等于并行加速。我会测每帧最长工作段、总完成时间以及交互是否被阻塞，再回归关闭重开、取消和切场景。
+
+    ### 方案二：纯数据计算再评估 Job 或后台任务
+
+    如果耗时的是批量角色路径评分，我会先拆成“主线程读取场景并构造数值输入 → 纯数据计算 → 主线程应用结果”。GameObject、Transform 等场景操作不能随意搬到工作线程。
+
+    Unity Job System 适合可划分、依赖明确且计算量足够的数据工作，通常结合 NativeContainer 管理内存和依赖；后台 Task 用于目标平台支持的线程安全托管计算或适当的 I/O 协作。async 或 await 本身不保证后台执行，不能把它当作线程切换声明。
+
+    结果回传时角色可能已销毁或被对象池重新租用。结果应带请求或租用版本，回到主线程后检查对象身份与所有权；取消请求不保证所有排队回调都消失，还要丢弃过期结果并释放资源。
+
+    ### 验证与面试表达
+
+    比较串行计算与调度、复制、等待、结果应用的完整成本；小任务可能抵不过调度开销。覆盖数据竞争、异常、资源释放、退出场景与目标平台限制，避免调度后立即等待而把主线程重新堵住。
+
+    最终可回答：“UI 创建先考虑主线程分帧与生命周期；可独立的纯数据重计算才考虑并行，按完整耗时和取消、销毁后的正确性选择方案。”这些是项目场景示例，不是已有性能收益声明。
   pitfalls:
     - 认为 yield return null 会让前面的计算在后台运行。
     - 认为把大循环放进协程就自动消除了单帧卡顿。
-  followUps:
-    - q-coroutine-frame-budget
-    - q-jobs-boundary
+    - 大循环执行完后才 yield，认为已经分帧。
+    - 把每帧八个当作通用性能参数。
+    - 认为 await 后必定到了后台线程。
+    - 忽略回传时对象已被复用或销毁。
   articleIds:
     - csharp-memory-basics
-  applicability: Unity 协程的主线程语义；参考 Unity 6.3 文档。
+    - unity-pooling-lifecycle-regression
+  applicability: Unity 移动游戏客户端面试练习；以实际开发场景构造的示例，不代表个人项目业绩或已验证性能收益。Unity 工具操作以 2022.3 为参考，目标平台、后端及包版本需按项目核验。
   updatedAt: 2026-10-27
-  verifiedAt: 2026-10-22
+  verifiedAt: null
   sample: true
   sources:
     - title: Unity 6.3 · 编写与运行协程
       url: https://docs.unity.com/en-us/engine/6000.3/manual/scripting/coroutines-section/coroutines
+    - title: Unity 2022.3：协程
+      url: https://docs.unity3d.com/2022.3/Documentation/Manual/Coroutines.html
+    - title: Unity 2022.3：Job System
+      url: https://docs.unity3d.com/2022.3/Documentation/Manual/JobSystemOverview.html

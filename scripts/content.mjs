@@ -115,11 +115,9 @@ export function validateContent(articles, questions, domains = [], projects = []
         for (const field of ['shortAnswer', 'explanation'])
           assert(string(item[field]), `${label} 缺少 ${field}`)
         assert(['基础', '原理', '场景'].includes(item.level), `${label} 难度无效`)
-        for (const field of ['pitfalls', 'followUps', 'articleIds']) {
+        for (const field of ['pitfalls', 'articleIds']) {
           assert(
-            Array.isArray(item[field]) &&
-              (field === 'followUps' || item[field].length > 0) &&
-              item[field].every(string),
+            Array.isArray(item[field]) && item[field].length > 0 && item[field].every(string),
             `${label} ${field} 无效`,
           )
         }
@@ -127,34 +125,10 @@ export function validateContent(articles, questions, domains = [], projects = []
     }
   }
   const articleIds = new Set(articles.map((article) => article.id))
-  const questionById = new Map(questions.map((question) => [question.id, question]))
   for (const question of questions) {
     for (const id of question.articleIds)
       assert(articleIds.has(id), `题目 ${question.id} 关联的文章 ${id} 不存在`)
-    assert(
-      new Set(question.followUps).size === question.followUps.length,
-      `题目 ${question.id} 追问重复`,
-    )
-    for (const id of question.followUps) {
-      assert(questionById.has(id), `题目 ${question.id} 的追问 ${id} 不存在`)
-      assert(id !== question.id, `题目 ${question.id} 不能追问自身`)
-    }
-    if (question.parentId !== undefined && question.parentId !== null) {
-      const parent = questionById.get(question.parentId)
-      assert(parent?.followUps.includes(question.id), `题目 ${question.id} 的父题关联无效`)
-    }
   }
-  const visiting = new Set()
-  const visited = new Set()
-  function visitQuestion(id) {
-    assert(!visiting.has(id), `题目 ${id} 的追问存在循环`)
-    if (visited.has(id)) return
-    visiting.add(id)
-    for (const next of questionById.get(id).followUps) visitQuestion(next)
-    visiting.delete(id)
-    visited.add(id)
-  }
-  for (const question of questions) visitQuestion(question.id)
   const projectIds = new Set()
   for (const project of projects) {
     const label = `项目实践 ${project?.id || '（缺少 ID）'}`
@@ -186,6 +160,15 @@ export function validateContent(articles, questions, domains = [], projects = []
 export function renderMarkdown(text) {
   const env = { toc: [] }
   return { html: markdown.render(text, env), toc: env.toc }
+}
+
+export function validateQuestionRedirects(questions, redirects) {
+  const ids = new Set(questions.map((question) => question.id))
+  for (const [alias, target] of Object.entries(redirects)) {
+    assert(/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(alias), '旧题目 ID 无效')
+    assert(!ids.has(alias), `旧题目 ${alias} 与现有题目冲突`)
+    assert(ids.has(target), `旧题目 ${alias} 的合并目标不存在`)
+  }
 }
 
 export async function compileContent(root) {
@@ -261,7 +244,10 @@ export async function compileContent(root) {
   }
   assert(Array.isArray(projects), '项目实践必须为数组')
   validateContent(articles, questions, domains, projects)
-  const questionByTitle = (id) => questions.find((question) => question.id === id)?.title || ''
+  validateQuestionRedirects(
+    questions,
+    JSON.parse(await readFile(path.join(root, 'question-redirects.json'), 'utf8')),
+  )
   const searchable = (...values) => values.flat(Infinity).join(' ').normalize('NFKC').toLowerCase()
   const result = {
     domains,
@@ -298,7 +284,6 @@ export async function compileContent(root) {
     }),
     questions: questions.map((question) => ({
       ...question,
-      parentId: question.parentId ?? null,
       verifiedAt: question.verifiedAt ?? null,
       shortAnswerHtml: renderMarkdown(question.shortAnswer).html,
       explanationHtml: renderMarkdown(question.explanation).html,
@@ -308,7 +293,6 @@ export async function compileContent(root) {
         question.shortAnswer,
         question.explanation,
         question.pitfalls,
-        question.followUps.map((id) => questionByTitle(id)),
       ),
     })),
   }
