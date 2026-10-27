@@ -90,7 +90,7 @@ Unity 使用 `PLAY_ASSET_PACKS` 模板变量把 asset pack 模块写入 AAB。�
 4. 把必要修改小步迁回新模板，确保保留 `PLAY_ASSET_PACKS`。
 5. 导出到新的空目录，检查 `launcher/build.gradle` 中展开后的 asset pack 配置，以及根 `settings.gradle` 中的模块引用；再构建 AAB，使用 `bundletool` 或 Android Studio 的包分析功能检查模块。
 
-**配置作用：**`Custom Launcher Gradle Template` 让项目覆盖默认启动模块模板；`** PLAY_ASSET_PACKS**` 是 Unity 构建时替换的占位符，不能把它当作最终 Gradle 语法直接写入已导出的工程。具体位置和 DSL 应沿用当前 Editor 生成的模板。必要时同样备份、重建 Settings 模板，避免只接入 launcher 却漏了模块。依据：[Gradle 模板变量](https://docs.unity3d.com/6000.0/Documentation/Manual/android-gradle-template-variables.html)。
+**配置作用：** `Custom Launcher Gradle Template` 让项目覆盖默认启动模块模板；`**PLAY_ASSET_PACKS**` 是 Unity 构建时替换的占位符，不能把它当作最终 Gradle 语法直接写入已导出的工程。具体位置和 DSL 应沿用当前 Editor 生成的模板。必要时同样备份、重建 Settings 模板，避免只接入 launcher 却漏了模块。依据：[Gradle 模板变量](https://docs.unity3d.com/6000.0/Documentation/Manual/android-gradle-template-variables.html)。
 
 **可能的问题：** 模板整体替换可能丢失仓库、依赖和打包定制；只追加变量又可能混用新旧 DSL。逐项比较和重新构建后才能确认升级完成，本轮未对业务模板实际执行此操作。
 
